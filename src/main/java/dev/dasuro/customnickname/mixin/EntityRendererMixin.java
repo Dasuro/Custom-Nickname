@@ -32,13 +32,13 @@ public class EntityRendererMixin {
         UUID uuid = player.getUuid();
         String currentName = player.getGameProfile().name();
 
-        // Auto-update stored username if the player renamed
+        // Auto-update the stored username if the player has renamed
         NickConfig.updateUsernameIfChanged(uuid, currentName);
 
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        // Basis: nur der echte Name als Text, Stil holen wir aus dem aktuellen state oder Original
+        // Base: use the real name as text, style is taken from the current state or original
         Text base = Text.literal(currentName);
         MutableText nickComponent = ColorParser.buildNick(nick, base);
 
@@ -49,9 +49,11 @@ public class EntityRendererMixin {
         full.append(nickComponent);
         if (team != null && nick.showSuffix) full.append(team.getSuffix());
 
-        // Ersetze den Kopf-Nametag vollständig durch unseren Nick
-        state.playerName = full;
-        // displayName auf null setzen, damit der Name nicht doppelt gerendert wird
-        state.displayName = null;
+        // Hide the default nametag by clearing playerName
+        state.playerName = null;
+        // Set displayName to our custom nick so that other mods (e.g. LabyMod)
+        // still detect an active nametag and render their addon icons
+        // (VoiceChat, Party, etc.) above it.
+        state.displayName = full;
     }
 }
