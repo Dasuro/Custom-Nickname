@@ -39,12 +39,6 @@ public class CustomNickConfigScreen extends Screen {
     private boolean addRainbowWave = false;
     private float addRainbowSpeed = 1.0f;
 
-    private ButtonWidget togglePrefix;
-    private ButtonWidget toggleSuffix;
-    private ButtonWidget toggleRainbow;
-    private ButtonWidget speedMinus;
-    private ButtonWidget speedPlus;
-    private ButtonWidget saveButton;
 
     private SliderWidget rainbowSpeedSlider;
     private int addPreviewY = -1;
@@ -142,7 +136,7 @@ public class CustomNickConfigScreen extends Screen {
         int btnY = top + 60;
         int btnW = (w - 10) / 2;
 
-        togglePrefix = this.addDrawableChild(
+        this.addDrawableChild(
                 ButtonWidget.builder(
                                 Text.literal(toggleLabel("Show prefix", addShowPrefix)),
                                 b -> {
@@ -158,7 +152,7 @@ public class CustomNickConfigScreen extends Screen {
                         .build()
         );
 
-        toggleSuffix = this.addDrawableChild(
+        this.addDrawableChild(
                 ButtonWidget.builder(
                                 Text.literal(toggleLabel("Show suffix", addShowSuffix)),
                                 b -> {
@@ -174,7 +168,7 @@ public class CustomNickConfigScreen extends Screen {
                         .build()
         );
 
-        toggleRainbow = this.addDrawableChild(
+        this.addDrawableChild(
                 ButtonWidget.builder(
                                 Text.literal(toggleLabel("Rainbow wave", addRainbowWave)),
                                 b -> {
@@ -394,8 +388,6 @@ public class CustomNickConfigScreen extends Screen {
             if (rawNick != null && !rawNick.isEmpty() && !visiblePreviewNick.isBlank()) {
                 Text nickText = ColorParser.buildNick(tmp, Text.literal(username));
 
-                // In the add-preview we only show the resulting nick (no "old name" suffix).
-                Text preview = nickText;
 
                 int y = addPreviewY;
                 int boxX = 20;
@@ -426,7 +418,7 @@ public class CustomNickConfigScreen extends Screen {
 
                 context.drawTextWithShadow(
                         this.textRenderer,
-                        preview,
+                        nickText,
                         previewTextX,
                         y,
                         0xFFFFFFFF
@@ -607,9 +599,13 @@ public class CustomNickConfigScreen extends Screen {
             editButton.render(context, mouseX, mouseY, delta);
             deleteButton.render(context, mouseX, mouseY, delta);
 
-            // Separator line at the bottom of this row
-            int lineY = y + 26; // itemHeight (28) - 2px padding
-            context.fill(x, lineY, x + entryWidth, lineY + 1, 0xFF444444);
+            // Separator line at the bottom of this row (skip for the last entry)
+            int index = entriesList != null ? entriesList.children().indexOf(this) : -1;
+            int total = entriesList != null ? entriesList.children().size() : 0;
+            if (index < total - 1) {
+                int lineY = y + 26; // itemHeight (28) - 2px padding
+                context.fill(x, lineY, x + entryWidth, lineY + 1, 0xFF444444);
+            }
         }
     }
 

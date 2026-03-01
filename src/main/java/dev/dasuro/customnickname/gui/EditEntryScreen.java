@@ -24,9 +24,6 @@ public class EditEntryScreen extends Screen {
     private TextFieldWidget usernameField;
     private TextFieldWidget nicknameField;
 
-    private ButtonWidget prefixBtn;
-    private ButtonWidget suffixBtn;
-    private ButtonWidget rainbowBtn;
     private SliderWidget speedSlider;
     private int previewY = -1;
 
@@ -90,7 +87,7 @@ public class EditEntryScreen extends Screen {
         int btnY = y + 60;
         int btnW = (w - 10) / 2;
 
-        prefixBtn = this.addDrawableChild(
+        this.addDrawableChild(
                 ButtonWidget.builder(
                                 Text.literal(toggleLabel("Show prefix", entry.showPrefix)),
                                 b -> {
@@ -106,7 +103,7 @@ public class EditEntryScreen extends Screen {
                         .build()
         );
 
-        suffixBtn = this.addDrawableChild(
+        this.addDrawableChild(
                 ButtonWidget.builder(
                                 Text.literal(toggleLabel("Show suffix", entry.showSuffix)),
                                 b -> {
@@ -122,7 +119,7 @@ public class EditEntryScreen extends Screen {
                         .build()
         );
 
-        rainbowBtn = this.addDrawableChild(
+        this.addDrawableChild(
                 ButtonWidget.builder(
                                 Text.literal(toggleLabel("Rainbow wave", entry.rainbow)),
                                 b -> {
@@ -284,7 +281,6 @@ public class EditEntryScreen extends Screen {
             String visibleNick = ColorParser.strip(rawNick);
             if (rawNick != null && !rawNick.isEmpty() && !visibleNick.isBlank()) {
                 Text nickText = ColorParser.buildNick(tmp, Text.literal(username));
-                Text preview = nickText;
 
                 int y = previewY;
                 int boxX = 20;
@@ -315,7 +311,7 @@ public class EditEntryScreen extends Screen {
 
                 context.drawTextWithShadow(
                         this.textRenderer,
-                        preview,
+                        nickText,
                         previewTextX,
                         y,
                         0xFFFFFFFF
