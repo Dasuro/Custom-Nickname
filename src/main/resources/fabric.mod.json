@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "customnickname",
+  "version": "${version}",
+  "name": "Custom Nickname",
+  "description": "A mod for assigning custom Nicknames for Players.",
+  "authors": ["Dasuro"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.dasuro.customnickname.Customnickname"],
+    "modmenu": ["dev.dasuro.customnickname.gui.ModMenuIntegration"]
+  },
+  "mixins": ["customnickname.mixins.json"],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}",
+    "modmenu": "*"
+  }
+}
