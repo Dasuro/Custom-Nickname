@@ -3,12 +3,14 @@ package dev.dasuro.customnickname.gui;
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.util.ColorParser;
+import dev.dasuro.customnickname.util.MojangLookup;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.Text;
 
 import java.util.UUID;
@@ -194,11 +196,44 @@ public class EditEntryScreen extends Screen {
                                 return;
                             }
 
-                            entry.username = name;
                             entry.nickname = nick;
 
-                            NickConfig.set(uuid, entry);
-                            MinecraftClient.getInstance().setScreen(parent);
+                            // Check if username was changed
+                            NickEntry original = NickConfig.get(uuid);
+                            String originalName = original != null ? original.username : null;
+                            boolean usernameChanged = originalName != null && !name.equalsIgnoreCase(originalName);
+
+                            if (!usernameChanged) {
+                                // Username unchanged – just save under the same UUID
+                                entry.username = name;
+                                NickConfig.set(uuid, entry);
+                                MinecraftClient.getInstance().setScreen(parent);
+                                return;
+                            }
+
+                            // Username changed – resolve new UUID like saveAdd() does
+                            UUID onlineUuid = findOnlineUuid(name);
+                            if (onlineUuid != null) {
+                                entry.username = findOnlineExactName(name);
+                                NickConfig.remove(uuid);
+                                NickConfig.set(onlineUuid, entry);
+                                MinecraftClient.getInstance().setScreen(parent);
+                                return;
+                            }
+
+                            // Not online – try Mojang API (async)
+                            MojangLookup.resolveByName(name).thenAccept(profile -> {
+                                MinecraftClient.getInstance().execute(() -> {
+                                    if (profile == null) {
+                                        sendChat("Custom Nickname: could not resolve UUID for \"" + name + "\".");
+                                        return;
+                                    }
+                                    entry.username = profile.name();
+                                    NickConfig.remove(uuid);
+                                    NickConfig.set(profile.uuid(), entry);
+                                    MinecraftClient.getInstance().setScreen(parent);
+                                });
+                            });
                         })
                         .dimensions(startX2, yBottom2, btnW2, 20)
                         .build()
@@ -306,5 +341,27 @@ public class EditEntryScreen extends Screen {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null) return;
         mc.player.sendMessage(Text.literal(msg), false);
+    }
+
+    private UUID findOnlineUuid(String name) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.getNetworkHandler() == null) return null;
+
+        for (PlayerListEntry e : mc.getNetworkHandler().getPlayerList()) {
+            String n = e.getProfile().name();
+            if (n != null && n.equalsIgnoreCase(name)) return e.getProfile().id();
+        }
+        return null;
+    }
+
+    private String findOnlineExactName(String name) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.getNetworkHandler() == null) return name;
+
+        for (PlayerListEntry e : mc.getNetworkHandler().getPlayerList()) {
+            String n = e.getProfile().name();
+            if (n != null && n.equalsIgnoreCase(name)) return n;
+        }
+        return name;
     }
 }

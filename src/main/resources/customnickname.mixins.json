@@ -8,6 +8,7 @@
   "client": [
     "PlayerListHudMixin",
     "PlayerListEntryMixin",
+    "PlayerEntityDisplayNameMixin",
     "EntityRendererMixin",
     "ChatHudMixin",
     "ScoreboardHudMixin"
