@@ -74,34 +74,33 @@ public class ColorParser {
     }
 
 
+    /** Number of characters for one full rainbow cycle. */
+    private static final double RAINBOW_WAVELENGTH = 20.0;
+
     public static MutableText rainbowWave(String plain, long timeMs, float speed) {
         MutableText result = Text.empty();
-        int len = plain.length();
+        if (plain == null || plain.isEmpty()) return result;
+
+        // Use code points to correctly handle emojis / surrogate pairs
+        int[] codePoints = plain.codePoints().toArray();
+        int len = codePoints.length;
         if (len == 0) return result;
 
-        double t = (timeMs / 1000.0) * speed;
-
-        // Base hue moves slowly over time
-        double baseHue = (t * 0.08) % 1.0;
-
-        // Small hue wave traveling through the text
-        double wavelength = 12.0;
-        double k = (Math.PI * 2.0) / wavelength;
-        double phase = t * 2.0 * Math.PI;
-
-        // Keep subtle so it looks like one wave, not random per letter
-        double amplitude = 0.12;
+        // Time-based offset – negative so the wave travels right → left
+        double offset = -(timeMs / 1000.0) * speed * 0.25;
 
         for (int i = 0; i < len; i++) {
-            double hue =
-                    (baseHue + amplitude * Math.sin(k * i - phase)) % 1.0;
+            // Fixed wavelength: one full hue cycle every RAINBOW_WAVELENGTH chars.
+            // This keeps a smooth gradient even for very short names,
+            // and naturally repeats for longer ones.
+            double hue = (i / RAINBOW_WAVELENGTH + offset) % 1.0;
             if (hue < 0) hue += 1.0;
 
             int rgb =
                     java.awt.Color.HSBtoRGB((float) hue, 1.0f, 1.0f) & 0xFFFFFF;
 
             result.append(
-                    Text.literal(String.valueOf(plain.charAt(i)))
+                    Text.literal(new String(Character.toChars(codePoints[i])))
                             .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb)))
             );
         }
