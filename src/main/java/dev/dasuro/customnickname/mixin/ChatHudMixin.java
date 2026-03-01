@@ -37,6 +37,13 @@ public class ChatHudMixin {
 
     @Unique
     private Text replaceNamesInTree(Text text) {
+        // Never touch nodes whose Style carries a ClickEvent or HoverEvent –
+        // rebuilding them would destroy links / tooltips the server attached.
+        // Return the entire sub-tree unchanged (including siblings).
+        if (hasInteractiveStyle(text)) {
+            return text;
+        }
+
         if (text.getContent() instanceof PlainTextContent.Literal lc) {
             String raw = lc.string();
             MutableText replaced = replaceConfiguredNamesOnePass(raw, text);
@@ -90,6 +97,9 @@ public class ChatHudMixin {
 
     @Unique
     private Text replacePlayerNameArgumentIfExact(Text tArg) {
+        // Don't touch arguments that carry interactive styles
+        if (hasInteractiveStyle(tArg)) return tArg;
+
         String full = tArg.getString();
         if (full == null || full.isBlank()) return tArg;
 
@@ -192,13 +202,38 @@ public class ChatHudMixin {
         return out;
     }
 
+    /**
+     * Returns true if the node's own Style has a ClickEvent or HoverEvent.
+     * We must not restructure such nodes because that would destroy the
+     * interactive behaviour (links, tooltips, run-command, etc.).
+     */
+    @Unique
+    private boolean hasInteractiveStyle(Text text) {
+        net.minecraft.text.Style style = text.getStyle();
+        if (style == null) return false;
+        return style.getClickEvent() != null || style.getHoverEvent() != null;
+    }
+
     @Unique
     private Text rebuildWithNewSiblings(Text text) {
-        if (text.getSiblings().isEmpty()) return text;
+        List<Text> siblings = text.getSiblings();
+        if (siblings.isEmpty()) return text;
 
-        MutableText rebuilt = text.copyContentOnly();
-        for (Text sibling : text.getSiblings()) {
-            rebuilt.append(replaceNamesInTree(sibling));
+        boolean anyChanged = false;
+        List<Text> newSiblings = new ArrayList<>(siblings.size());
+        for (Text sibling : siblings) {
+            Text processed = replaceNamesInTree(sibling);
+            newSiblings.add(processed);
+            if (processed != sibling) anyChanged = true;
+        }
+
+        // If nothing changed, return the original object to preserve identity
+        // and avoid unnecessary reconstruction that could lose subtle state.
+        if (!anyChanged) return text;
+
+        MutableText rebuilt = text.copyContentOnly().setStyle(text.getStyle());
+        for (Text s : newSiblings) {
+            rebuilt.append(s);
         }
         return rebuilt;
     }
