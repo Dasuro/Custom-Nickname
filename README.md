@@ -18,8 +18,7 @@ A client-side Fabric mod that lets you assign custom nicknames to any player. Ni
 - **Auto Username Update** — Detects player name changes and keeps stored entries up to date
 - **Persistent Config** — All nicknames are saved to a JSON config file and persist across sessions
 - **Mod Support** — Should work correctly with all common performance mods and client-side mods without conflicts
-
-
+##
 - **More Features and Bugs** — If you have cool features to suggest or find any bugs, please open an issue or submit a pull request on GitHub!
 
 ## Requirements
