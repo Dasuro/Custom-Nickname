@@ -2,11 +2,14 @@ package dev.dasuro.customnickname.mixin;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
+import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.text.TextColor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -40,14 +43,23 @@ public class PlayerListEntryMixin {
         if (nick == null) return;
 
         Text baseName = Text.literal(currentName != null ? currentName : "");
+        Team team = self.getScoreboardTeam();
+        if (team != null && team.getColor().getColorValue() != null) {
+            baseName = Text.literal(currentName != null ? currentName : "").setStyle(
+                    Style.EMPTY.withColor(TextColor.fromRgb(team.getColor().getColorValue()))
+            );
+        }
         MutableText nickComponent = ColorParser.buildNick(nick, baseName);
 
-        Team team = self.getScoreboardTeam();
         MutableText full = Text.empty();
 
         if (team != null && nick.showPrefix) full.append(team.getPrefix());
         full.append(nickComponent);
         if (team != null && nick.showSuffix) full.append(team.getSuffix());
+
+        if (StorageConfig.isShowIndicator()) {
+            full.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+        }
 
         cir.setReturnValue(full);
     }

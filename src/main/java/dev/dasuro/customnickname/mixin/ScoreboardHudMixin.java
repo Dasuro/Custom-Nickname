@@ -2,6 +2,7 @@ package dev.dasuro.customnickname.mixin;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
+import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
 import dev.dasuro.customnickname.util.StyledSegment;
 import net.minecraft.client.MinecraftClient;
@@ -158,7 +159,16 @@ public abstract class ScoreboardHudMixin {
 
         // The nickname itself
         Text baseName = Text.literal(bestName);
+        if (team != null && team.getColor().getColorValue() != null) {
+            baseName = Text.literal(bestName).setStyle(
+                    net.minecraft.text.Style.EMPTY.withColor(net.minecraft.text.TextColor.fromRgb(team.getColor().getColorValue()))
+            );
+        }
         result.append(ColorParser.buildNick(nickEntry, baseName));
+
+        if (StorageConfig.isShowIndicator()) {
+            result.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+        }
 
         // Handle suffix area
         if (!afterName.isEmpty()) {

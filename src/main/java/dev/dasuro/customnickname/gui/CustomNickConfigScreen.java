@@ -2,6 +2,7 @@ package dev.dasuro.customnickname.gui;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
+import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
 import dev.dasuro.customnickname.util.MojangLookup;
 import net.minecraft.client.MinecraftClient;
@@ -9,6 +10,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.Selectable;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ElementListWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
@@ -25,7 +27,8 @@ import java.util.UUID;
 public class CustomNickConfigScreen extends Screen {
     private enum Tab {
         ADD,
-        ENTRIES
+        ENTRIES,
+        OPTIONS
     }
 
     private final Screen parent;
@@ -45,6 +48,12 @@ public class CustomNickConfigScreen extends Screen {
 
 
     private EntriesList entriesList;
+    private TextFieldWidget searchField;
+
+    private int optionsLabelX;
+    private int optionsLabelY;
+    private int indicatorLabelX;
+    private int indicatorLabelY;
 
     public CustomNickConfigScreen(Screen parent) {
         super(Text.literal("Custom Nickname"));
@@ -56,7 +65,7 @@ public class CustomNickConfigScreen extends Screen {
         this.clearChildren();
 
         int tabHeight = 24;
-        int tabWidth = (this.width - 20) / 2;
+        int tabWidth = (this.width - 20) / 3;
         int tabX = 10;
         int tabY = 10;
 
@@ -78,16 +87,27 @@ public class CustomNickConfigScreen extends Screen {
         entriesTabBtn.active = tab != Tab.ENTRIES;
         this.addDrawableChild(entriesTabBtn);
 
+        ButtonWidget optionsTabBtn = ButtonWidget.builder(Text.literal("Options"), b -> {
+                    tab = Tab.OPTIONS;
+                    init();
+                })
+                .dimensions(tabX + tabWidth * 2, tabY, tabWidth, tabHeight)
+                .build();
+        optionsTabBtn.active = tab != Tab.OPTIONS;
+        this.addDrawableChild(optionsTabBtn);
+
         int contentTop = tabY + tabHeight + 10;
 
         if (tab == Tab.ADD) {
             initAdd(contentTop);
-        } else {
+        } else if (tab == Tab.ENTRIES) {
             initEntries(contentTop);
+        } else {
+            initOptions(contentTop);
         }
 
-        // Done button only for Entries tab
-        if (tab == Tab.ENTRIES) {
+        // Done button for Entries and Options tabs
+        if (tab == Tab.ENTRIES || tab == Tab.OPTIONS) {
             int btnWidth = 100;
             int btnX = (this.width - btnWidth) / 2;
 
@@ -310,13 +330,31 @@ public class CustomNickConfigScreen extends Screen {
     }
 
     private void initEntries(int top) {
-        int listHeight = this.height - top - 40;
+        int searchLabelWidth = this.textRenderer.getWidth("Search: ");
+        int searchFieldX = 20 + searchLabelWidth;
+        int searchFieldW = this.width - 40 - searchLabelWidth;
+
+        searchField = new TextFieldWidget(
+                this.textRenderer,
+                searchFieldX,
+                top,
+                searchFieldW,
+                20,
+                Text.literal("Search")
+        );
+        searchField.setMaxLength(256);
+        searchField.setChangedListener(query -> refreshEntries());
+        // Preserve search text across tab switches / resizes
+        this.addDrawableChild(searchField);
+
+        int listTop = top + 26;
+        int listHeight = this.height - listTop - 40;
 
         entriesList = new EntriesList(
                 MinecraftClient.getInstance(),
                 this.width,
                 listHeight,
-                top,
+                listTop,
                 28
         );
 
@@ -326,6 +364,8 @@ public class CustomNickConfigScreen extends Screen {
 
     private void refreshEntries() {
         if (entriesList == null) return;
+
+        String query = (searchField != null ? searchField.getText() : "").trim().toLowerCase();
 
         List<EntryRow> rows = new ArrayList<>();
 
@@ -345,10 +385,89 @@ public class CustomNickConfigScreen extends Screen {
                 continue;
             }
 
+            if (!query.isEmpty()) {
+                NickEntry ne = e.getValue();
+                String username = (ne.username != null ? ne.username : "").toLowerCase();
+                String strippedNick = (ne.nickname != null ? ColorParser.strip(ne.nickname) : "").toLowerCase();
+                if (!username.contains(query) && !strippedNick.contains(query)) {
+                    continue;
+                }
+            }
+
             rows.add(new EntryRow(uuid, e.getValue()));
         }
 
         entriesList.replaceEntries(rows);
+        entriesList.setScrollY(0);
+    }
+
+    private void initOptions(int top) {
+        boolean isGlobal = StorageConfig.getMode() == StorageConfig.StorageMode.GLOBAL;
+
+        String labelStr = "Storage Mode:  ";
+        int labelWidth = this.textRenderer.getWidth(labelStr);
+        int btnW = 80;
+        int btnH = 20;
+        int gap = 4;
+
+        // Center the whole row (label + 2 buttons) horizontally
+        int totalWidth = labelWidth + btnW + gap + btnW;
+        int startX = (this.width - totalWidth) / 2;
+        int btnX = startX + labelWidth;
+
+        // "Global" button with tooltip
+        ButtonWidget globalBtn = ButtonWidget.builder(Text.literal("Global"), b -> {
+                    NickConfig.switchMode(StorageConfig.StorageMode.GLOBAL);
+                    init();
+                })
+                .dimensions(btnX, top, btnW, btnH)
+                .tooltip(Tooltip.of(
+                        Text.literal("Shared across all instances (.minecraft)")))
+                .build();
+        globalBtn.active = !isGlobal;
+        this.addDrawableChild(globalBtn);
+
+        // "Local" button with tooltip
+        ButtonWidget localBtn = ButtonWidget.builder(Text.literal("Local"), b -> {
+                    NickConfig.switchMode(StorageConfig.StorageMode.LOCAL);
+                    init();
+                })
+                .dimensions(btnX + btnW + gap, top, btnW, btnH)
+                .tooltip(Tooltip.of(
+                        Text.literal("Only for this modpack instance")))
+                .build();
+        localBtn.active = isGlobal;
+        this.addDrawableChild(localBtn);
+
+        // Store positions for render() label drawing
+        this.optionsLabelX = startX;
+        this.optionsLabelY = top + (btnH - this.textRenderer.fontHeight) / 2;
+
+        // --- Indicator toggle ---
+        int indicatorY = top + btnH + 10;
+        String indicatorLabelStr = "Nickname Indicator:  ";
+        int indicatorLabelWidth = this.textRenderer.getWidth(indicatorLabelStr);
+        int indicatorBtnW = 60;
+        int indicatorTotalW = indicatorLabelWidth + indicatorBtnW;
+        int indicatorStartX = (this.width - indicatorTotalW) / 2;
+
+        ButtonWidget indicatorBtn = ButtonWidget.builder(
+                        Text.literal(StorageConfig.isShowIndicator() ? "ON" : "OFF"),
+                        b -> {
+                            StorageConfig.setShowIndicator(!StorageConfig.isShowIndicator());
+                            b.setMessage(Text.literal(StorageConfig.isShowIndicator() ? "ON" : "OFF"));
+                        })
+                .dimensions(indicatorStartX + indicatorLabelWidth, indicatorY, indicatorBtnW, btnH)
+                .tooltip(Tooltip.of(
+                        Text.empty()
+                                .append(Text.literal("Shows a "))
+                                .append(Text.literal("\u270E").styled(s -> s.withColor(0xFFFF00)))
+                                .append(Text.literal(" next to nicknamed players or with nicknamed players in a chat massage."))))
+                .build();
+        this.addDrawableChild(indicatorBtn);
+
+        this.indicatorLabelX = indicatorStartX;
+        this.indicatorLabelY = indicatorY + (btnH - this.textRenderer.fontHeight) / 2;
     }
 
     @Override
@@ -370,6 +489,33 @@ public class CustomNickConfigScreen extends Screen {
                 2,
                 0xFFFFFF
         );
+
+        if (tab == Tab.ENTRIES && searchField != null) {
+            context.drawTextWithShadow(
+                    this.textRenderer,
+                    Text.literal("Search: "),
+                    20,
+                    searchField.getY() + (searchField.getHeight() - this.textRenderer.fontHeight) / 2 + 1,
+                    0xFFAAAAAA
+            );
+        }
+
+        if (tab == Tab.OPTIONS) {
+            context.drawTextWithShadow(
+                    this.textRenderer,
+                    Text.literal("Storage Mode:  "),
+                    optionsLabelX,
+                    optionsLabelY,
+                    0xFFFFFFFF
+            );
+            context.drawTextWithShadow(
+                    this.textRenderer,
+                    Text.literal("Nickname Indicator:  "),
+                    indicatorLabelX,
+                    indicatorLabelY,
+                    0xFFFFFFFF
+            );
+        }
 
         if (tab == Tab.ADD && addPreviewY != -1) {
             NickEntry tmp = new NickEntry();

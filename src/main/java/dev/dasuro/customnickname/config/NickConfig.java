@@ -7,28 +7,72 @@ import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 public class NickConfig {
     private static final Gson GSON =
             new GsonBuilder().setPrettyPrinting().create();
 
-    private static final File CONFIG_FILE =
-            FabricLoader.getInstance()
-                    .getConfigDir()
-                    .resolve("friendnicks.json")
-                    .toFile();
+    private static final String NICK_FILE_NAME = "customnickname.json";
+
+    /**
+     * Returns the config file based on the current storage mode.
+     * GLOBAL  → ~/.minecraft/config/customnickname.json  (shared across all instances)
+     * LOCAL   → <modpack>/config/customnickname.json      (modpack-specific)
+     */
+    private static File getConfigFile() {
+        if (StorageConfig.getMode() == StorageConfig.StorageMode.GLOBAL) {
+            return getGlobalConfigFile();
+        }
+        return getLocalConfigFile();
+    }
+
+    /** Local path – the modpack / instance config dir (FabricLoader). */
+    static File getLocalConfigFile() {
+        return FabricLoader.getInstance()
+                .getConfigDir()
+                .resolve(NICK_FILE_NAME)
+                .toFile();
+    }
+
+    /**
+     * Global path – always inside the real .minecraft/config folder.
+     * We use the standard OS-dependent .minecraft location so that every
+     * Fabric instance (regardless of launcher) can share one file.
+     */
+    static File getGlobalConfigFile() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        Path minecraftDir;
+
+        if (os.contains("win")) {
+            String appdata = System.getenv("APPDATA");
+            minecraftDir = Paths.get(appdata != null ? appdata : System.getProperty("user.home"), ".minecraft");
+        } else if (os.contains("mac")) {
+            minecraftDir = Paths.get(System.getProperty("user.home"), "Library", "Application Support", "minecraft");
+        } else {
+            minecraftDir = Paths.get(System.getProperty("user.home"), ".minecraft");
+        }
+
+        File configDir = minecraftDir.resolve("config").toFile();
+        if (!configDir.exists()) {
+            configDir.mkdirs();
+        }
+        return new File(configDir, NICK_FILE_NAME);
+    }
 
     // Key = uuid.toString()
     private static Map<String, NickEntry> nicks = new HashMap<>();
 
     public static void load() {
-        if (!CONFIG_FILE.exists()) {
+        File configFile = getConfigFile();
+        if (!configFile.exists()) {
             nicks = new HashMap<>();
             return;
         }
 
-        try (Reader r = new FileReader(CONFIG_FILE)) {
+        try (Reader r = new FileReader(configFile)) {
             Type type = new TypeToken<Map<String, NickEntry>>() {}.getType();
             Map<String, NickEntry> loaded = GSON.fromJson(r, type);
             nicks = loaded != null ? loaded : new HashMap<>();
@@ -38,7 +82,7 @@ public class NickConfig {
     }
 
     public static void save() {
-        try (Writer w = new FileWriter(CONFIG_FILE)) {
+        try (Writer w = new FileWriter(getConfigFile())) {
             GSON.toJson(nicks, w);
         } catch (Exception e) {
             e.printStackTrace();
@@ -78,5 +122,14 @@ public class NickConfig {
             // Write once when changed (name changes are rare)
             set(uuid, entry);
         }
+    }
+
+    /**
+     * Switches the storage mode and reloads nicknames from the new location.
+     * The old file is NOT deleted – both files coexist independently.
+     */
+    public static void switchMode(StorageConfig.StorageMode newMode) {
+        StorageConfig.setMode(newMode);
+        load();
     }
 }

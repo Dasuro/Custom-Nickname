@@ -3,6 +3,7 @@ package dev.dasuro.customnickname;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
+import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.gui.CustomNickConfigScreen;
 import dev.dasuro.customnickname.util.MojangLookup;
 import net.fabricmc.api.ClientModInitializer;
@@ -30,6 +31,7 @@ public class Customnickname implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        StorageConfig.load();
         NickConfig.load();
 
         // Refresh stored usernames (detect renames) on startup

@@ -14,6 +14,16 @@ public class ColorParser {
             "&#([0-9A-Fa-f]{6})|&([0-9a-fk-orA-FK-OR])"
     );
 
+    /** Matches only actual color codes: hex &#RRGGBB or legacy &0-9, &a-f (no formatting codes). */
+    private static final Pattern ACTUAL_COLOR_PATTERN = Pattern.compile(
+            "&#[0-9A-Fa-f]{6}|&[0-9a-fA-F]"
+    );
+
+    /** Matches only formatting codes: &l, &o, &n, &m, &k, &r (case-insensitive). */
+    private static final Pattern FORMATTING_ONLY_PATTERN = Pattern.compile(
+            "&[k-orK-OR]"
+    );
+
     /** Matches a trailing, incomplete hex color introducer that can happen while typing/pasting. */
     private static final Pattern TRAILING_INCOMPLETE_HEX = Pattern.compile("&#[0-9A-Fa-f]{0,5}$");
 
@@ -24,10 +34,12 @@ public class ColorParser {
         if (nickname == null) nickname = "";
 
         if (nick.rainbow) {
-            return rainbowWave(strip(nickname), System.currentTimeMillis(),
-                    nick.rainbowSpeed);
+            // Parse formatting codes to preserve bold/italic/etc., but ignore colors
+            java.util.List<StyledChar> chars = parseToStyledChars(nickname);
+            return rainbowWave(chars, System.currentTimeMillis(), nick.rainbowSpeed);
         }
-        if (hasColorCodes(nickname)) return parse(nickname);
+        if (hasActualColorCodes(nickname)) return parse(nickname);
+        if (hasFormattingOnlyCodes(nickname)) return parseWithOriginalColor(nickname, serverOriginal);
         return applyOriginalStyle(nickname, serverOriginal);
     }
 
@@ -77,32 +89,111 @@ public class ColorParser {
     /** Number of characters for one full rainbow cycle. */
     private static final double RAINBOW_WAVELENGTH = 20.0;
 
-    public static MutableText rainbowWave(String plain, long timeMs, float speed) {
-        MutableText result = Text.empty();
-        if (plain == null || plain.isEmpty()) return result;
+    /**
+     * A single visible character together with its non-color style
+     * (bold, italic, underline, strikethrough, obfuscated).
+     */
+    private record StyledChar(String character, Style baseStyle) {}
 
-        // Use code points to correctly handle emojis / surrogate pairs
-        int[] codePoints = plain.codePoints().toArray();
-        int len = codePoints.length;
-        if (len == 0) return result;
+    /**
+     * Parses formatting codes from the nickname and returns one StyledChar per
+     * visible character.  Color codes (&amp;0-f, &amp;#RRGGBB) are stripped because the
+     * rainbow supplies its own color, but formatting codes (&amp;l, &amp;o, &amp;n, &amp;m, &amp;k)
+     * are kept.  &amp;r resets only the formatting flags (not relevant for color
+     * since rainbow overrides it anyway).
+     */
+    private static java.util.List<StyledChar> parseToStyledChars(String input) {
+        java.util.List<StyledChar> result = new java.util.ArrayList<>();
+        if (input == null || input.isEmpty()) return result;
+
+        // Remove trailing incomplete hex codes
+        input = TRAILING_INCOMPLETE_HEX.matcher(input).replaceAll("");
+
+        Matcher matcher = CODE_PATTERN.matcher(input);
+        int lastEnd = 0;
+        // Only track non-color formatting
+        Style formatting = Style.EMPTY;
+
+        while (matcher.find()) {
+            // Collect visible characters before this code
+            if (matcher.start() > lastEnd) {
+                String segment = input.substring(lastEnd, matcher.start());
+                int[] cps = segment.codePoints().toArray();
+                for (int cp : cps) {
+                    result.add(new StyledChar(new String(Character.toChars(cp)), formatting));
+                }
+            }
+
+            if (matcher.group(1) == null) {
+                // Legacy code (not hex) – check for formatting vs color
+                char code = Character.toLowerCase(matcher.group(2).charAt(0));
+                if (code == 'r') {
+                    // Reset: clear all formatting
+                    formatting = Style.EMPTY;
+                } else if (isFormattingCode(code)) {
+                    // Formatting code (bold, italic, etc.) – apply
+                    formatting = applyFormattingOnly(formatting, code);
+                }
+                // Legacy color codes (0-9, a-f) are ignored for rainbow
+            }
+            // Hex color codes are also ignored for rainbow
+            lastEnd = matcher.end();
+        }
+
+        // Remaining visible characters after last code
+        if (lastEnd < input.length()) {
+            String tail = input.substring(lastEnd);
+            int[] cps = tail.codePoints().toArray();
+            for (int cp : cps) {
+                result.add(new StyledChar(new String(Character.toChars(cp)), formatting));
+            }
+        }
+
+        return result;
+    }
+
+    /** Returns true for formatting (non-color) legacy codes: l, o, n, m, k. */
+    private static boolean isFormattingCode(char code) {
+        return code == 'l' || code == 'o' || code == 'n' || code == 'm' || code == 'k';
+    }
+
+    /** Applies only formatting flags (bold, italic, etc.) to the style. */
+    private static Style applyFormattingOnly(Style style, char code) {
+        return switch (code) {
+            case 'l' -> style.withBold(true);
+            case 'o' -> style.withItalic(true);
+            case 'n' -> style.withUnderline(true);
+            case 'm' -> style.withStrikethrough(true);
+            case 'k' -> style.withObfuscated(true);
+            default  -> style;
+        };
+    }
+
+    /**
+     * Builds a rainbow-wave text from pre-parsed styled characters.
+     * Each character keeps its formatting (bold, italic, etc.) but gets
+     * its color from the rainbow wave.
+     */
+    private static MutableText rainbowWave(java.util.List<StyledChar> chars, long timeMs, float speed) {
+        MutableText result = Text.empty();
+        if (chars == null || chars.isEmpty()) return result;
+
+        int len = chars.size();
 
         // Time-based offset – negative so the wave travels right → left
         double offset = -(timeMs / 1000.0) * speed * 0.25;
 
         for (int i = 0; i < len; i++) {
-            // Fixed wavelength: one full hue cycle every RAINBOW_WAVELENGTH chars.
-            // This keeps a smooth gradient even for very short names,
-            // and naturally repeats for longer ones.
             double hue = (i / RAINBOW_WAVELENGTH + offset) % 1.0;
             if (hue < 0) hue += 1.0;
 
-            int rgb =
-                    java.awt.Color.HSBtoRGB((float) hue, 1.0f, 1.0f) & 0xFFFFFF;
+            int rgb = java.awt.Color.HSBtoRGB((float) hue, 1.0f, 1.0f) & 0xFFFFFF;
 
-            result.append(
-                    Text.literal(new String(Character.toChars(codePoints[i])))
-                            .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb)))
-            );
+            StyledChar sc = chars.get(i);
+            // Start from the character's formatting style, then apply rainbow color
+            Style style = sc.baseStyle().withColor(TextColor.fromRgb(rgb));
+
+            result.append(Text.literal(sc.character()).setStyle(style));
         }
 
         return result;
@@ -119,6 +210,67 @@ public class ColorParser {
     public static boolean hasColorCodes(String input) {
         if (input == null || input.isEmpty()) return false;
         return CODE_PATTERN.matcher(input).find();
+    }
+
+    /** Returns true only if the input contains actual color codes (hex or legacy 0-9, a-f). */
+    public static boolean hasActualColorCodes(String input) {
+        if (input == null || input.isEmpty()) return false;
+        return ACTUAL_COLOR_PATTERN.matcher(input).find();
+    }
+
+    /** Returns true if the input contains formatting-only codes (l, o, n, m, k, r) but no actual colors. */
+    public static boolean hasFormattingOnlyCodes(String input) {
+        if (input == null || input.isEmpty()) return false;
+        return FORMATTING_ONLY_PATTERN.matcher(input).find();
+    }
+
+    /**
+     * Parses formatting codes (bold, italic, etc.) and &amp;r resets from the nickname,
+     * but keeps the original player color from the server. This is used when the
+     * nickname contains only formatting codes and no explicit color codes.
+     */
+    public static MutableText parseWithOriginalColor(String input, Text serverOriginal) {
+        if (input == null || input.isEmpty()) return Text.empty();
+
+        Style originalStyle = extractFirstStyle(serverOriginal);
+
+        // Remove trailing incomplete hex codes
+        input = TRAILING_INCOMPLETE_HEX.matcher(input).replaceAll("");
+
+        MutableText result = Text.empty();
+        Matcher matcher = CODE_PATTERN.matcher(input);
+        int lastEnd = 0;
+        // Start with the original style (preserves color from the server)
+        Style currentStyle = originalStyle;
+
+        while (matcher.find()) {
+            if (matcher.start() > lastEnd) {
+                result.append(
+                        Text.literal(
+                                input.substring(lastEnd, matcher.start())
+                        ).setStyle(currentStyle)
+                );
+            }
+            if (matcher.group(2) != null) {
+                char code = Character.toLowerCase(matcher.group(2).charAt(0));
+                if (code == 'r') {
+                    // Reset: go back to the original style (not Style.EMPTY)
+                    currentStyle = originalStyle;
+                } else if (isFormattingCode(code)) {
+                    currentStyle = applyFormattingOnly(currentStyle, code);
+                }
+                // Ignore color codes here (shouldn't be present, but just in case)
+            }
+            lastEnd = matcher.end();
+        }
+
+        if (lastEnd < input.length()) {
+            result.append(
+                    Text.literal(input.substring(lastEnd))
+                            .setStyle(currentStyle)
+            );
+        }
+        return result;
     }
 
     public static String strip(String input) {

@@ -5,7 +5,9 @@
   "name": "Custom Nickname",
   "description": "A mod for assigning custom Nicknames for Players.",
   "authors": ["Dasuro"],
-  "contact": {},
+  "contact": {
+    "sources": "https://github.com/Dasuro/Custom-Nickname"
+  },
   "license": "MIT",
   "icon": "icon.png",
   "environment": "client",

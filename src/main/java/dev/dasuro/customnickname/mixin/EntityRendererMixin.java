@@ -2,6 +2,7 @@ package dev.dasuro.customnickname.mixin;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
+import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.render.entity.PlayerEntityRenderer;
@@ -9,7 +10,9 @@ import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.entity.PlayerLikeEntity;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.text.TextColor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -21,7 +24,7 @@ import java.util.UUID;
 public class EntityRendererMixin {
 
     @Inject(method = "updateRenderState", at = @At("RETURN"))
-    private void friendnicks$updateRenderState(
+    private void customnickname$updateRenderState(
             PlayerLikeEntity entity,
             PlayerEntityRenderState state,
             float tickProgress,
@@ -38,16 +41,24 @@ public class EntityRendererMixin {
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        // Base: use the real name as text, style is taken from the current state or original
-        Text base = Text.literal(currentName);
-        MutableText nickComponent = ColorParser.buildNick(nick, base);
-
         Team team = player.getScoreboardTeam();
+
+        // Base: use the real name as text, with team color applied so that
+        // buildNick can preserve the original color when no explicit color codes are used.
+        MutableText base = Text.literal(currentName);
+        if (team != null && team.getColor().getColorValue() != null) {
+            base.setStyle(Style.EMPTY.withColor(TextColor.fromRgb(team.getColor().getColorValue())));
+        }
+        MutableText nickComponent = ColorParser.buildNick(nick, base);
         MutableText full = Text.empty();
 
         if (team != null && nick.showPrefix) full.append(team.getPrefix());
         full.append(nickComponent);
         if (team != null && nick.showSuffix) full.append(team.getSuffix());
+
+        if (StorageConfig.isShowIndicator()) {
+            full.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+        }
 
         // Hide the default nametag by clearing playerName
         state.playerName = null;

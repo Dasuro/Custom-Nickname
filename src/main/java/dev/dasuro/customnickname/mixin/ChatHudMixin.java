@@ -2,13 +2,16 @@ package dev.dasuro.customnickname.mixin;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
+import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.PlainTextContent;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.text.TextColor;
 import net.minecraft.text.TranslatableTextContent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -31,8 +34,48 @@ public class ChatHudMixin {
             at = @At("HEAD"),
             argsOnly = true
     )
-    private Text friendnicks$onAddMessage(Text original) {
-        return replaceNamesInTree(original);
+    private Text customnickname$onAddMessage(Text original) {
+        Text result = replaceNamesInTree(original);
+
+        // If indicator is enabled and something was actually replaced, append ✎ once at the end
+        if (StorageConfig.isShowIndicator() && result != original) {
+            // Strip any indicator characters that leaked in from other mixins
+            // (e.g. PlayerListEntryMixin adding ✎ to display names used as chat arguments)
+            MutableText cleaned = stripIndicator(result);
+            cleaned.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+            return cleaned;
+        }
+
+        return result;
+    }
+
+    /**
+     * Recursively strips all occurrences of the indicator string from a Text tree
+     * so we can append exactly one at the very end.
+     */
+    @Unique
+    private MutableText stripIndicator(Text text) {
+        String indicator = StorageConfig.INDICATOR;
+
+        MutableText result;
+        if (text.getContent() instanceof PlainTextContent.Literal lc) {
+            String raw = lc.string();
+            String stripped = raw.replace(indicator, "").replace(indicator.trim(), "");
+            result = Text.literal(stripped).setStyle(text.getStyle());
+        } else {
+            result = text.copyContentOnly().setStyle(text.getStyle());
+        }
+
+        for (Text sibling : text.getSiblings()) {
+            // Skip siblings that are exactly the indicator
+            String sibStr = sibling.getString();
+            if (sibStr.equals(indicator) || sibStr.equals(indicator.trim())) {
+                continue;
+            }
+            result.append(stripIndicator(sibling));
+        }
+
+        return result;
     }
 
     @Unique
@@ -79,6 +122,13 @@ public class ChatHudMixin {
                                 changed = true;
                             }
                         }
+                    } else if (a instanceof String sArg) {
+                        Text asText = Text.literal(sArg);
+                        Text replacedArg = replacePlayerNameArgumentIfExact(asText);
+                        if (replacedArg != asText) {
+                            newArgs[i] = replacedArg;
+                            changed = true;
+                        }
                     }
                 }
 
@@ -97,25 +147,35 @@ public class ChatHudMixin {
 
     @Unique
     private Text replacePlayerNameArgumentIfExact(Text tArg) {
-        // Don't touch arguments that carry interactive styles
-        if (hasInteractiveStyle(tArg)) return tArg;
 
         String full = tArg.getString();
         if (full == null || full.isBlank()) return tArg;
 
-        // Only replace if the entire argument text is exactly a player name
-        // (possibly surrounded by non-alphanumeric characters like brackets)
-        String candidate = full.trim().replaceAll("[^A-Za-z0-9_]", "");
-        if (candidate.isEmpty()) return tArg;
+        // Strip any indicator that other mixins may have appended (e.g. " ✎")
+        String cleaned = full.replace(StorageConfig.INDICATOR, "")
+                             .replace(StorageConfig.INDICATOR.trim(), "")
+                             .trim();
+        if (cleaned.isEmpty()) return tArg;
 
-        // Ensure the cleaned candidate is the ONLY word – if the original text
-        // contains spaces (multiple words), it's a message, not a player name argument
-        if (full.trim().contains(" ")) return tArg;
+        // Try 1: exact single-word match (simple case, e.g. just "Dasuro")
+        String candidate = cleaned.replaceAll("[^A-Za-z0-9_]", "");
+        if (!candidate.isEmpty() && !cleaned.contains(" ")) {
+            NickEntry byOnline = resolveNickByOnlineName(candidate);
+            if (byOnline != null) {
+                Text base = Text.literal(candidate).setStyle(tArg.getStyle());
+                // If the style has no color, try to get team color
+                if (tArg.getStyle().getColor() == null) {
+                    base = applyTeamColorIfAvailable(base, candidate);
+                }
+                return ColorParser.buildNick(byOnline, base);
+            }
+        }
 
-        NickEntry byOnline = resolveNickByOnlineName(candidate);
-        if (byOnline != null) {
-            Text base = Text.literal(candidate).setStyle(tArg.getStyle());
-            return ColorParser.buildNick(byOnline, base);
+        // Try 2: the argument contains team prefix/suffix + player name
+        // (e.g. "Owner | Dasuro") – use the same one-pass replacement
+        MutableText replaced = replaceConfiguredNamesOnePass(cleaned, tArg);
+        if (replaced != null) {
+            return replaced;
         }
 
         return tArg;
@@ -137,6 +197,31 @@ public class ChatHudMixin {
             }
         }
         return null;
+    }
+
+    /**
+     * If the given text has no color in its style, looks up the player's team
+     * color and applies it. Returns the text unchanged if no team color is found.
+     */
+    @Unique
+    private Text applyTeamColorIfAvailable(Text text, String playerName) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getNetworkHandler() == null) return text;
+
+        for (PlayerListEntry ple : mc.getNetworkHandler().getPlayerList()) {
+            if (ple == null || ple.getProfile() == null) continue;
+            String onlineName = ple.getProfile().name();
+            if (onlineName != null && onlineName.equalsIgnoreCase(playerName)) {
+                net.minecraft.scoreboard.Team team = ple.getScoreboardTeam();
+                if (team != null && team.getColor().getColorValue() != null) {
+                    return Text.literal(text.getString()).setStyle(
+                            text.getStyle().withColor(TextColor.fromRgb(team.getColor().getColorValue()))
+                    );
+                }
+                break;
+            }
+        }
+        return text;
     }
 
     @Unique
@@ -188,6 +273,10 @@ public class ChatHudMixin {
                 out.append(Text.literal(matchedName).setStyle(styleSource.getStyle()));
             } else {
                 Text nameOriginal = Text.literal(matchedName).setStyle(styleSource.getStyle());
+                // If the style has no color, try to get team color
+                if (styleSource.getStyle().getColor() == null) {
+                    nameOriginal = applyTeamColorIfAvailable(nameOriginal, matchedName);
+                }
                 out.append(ColorParser.buildNick(matched, nameOriginal));
             }
 
