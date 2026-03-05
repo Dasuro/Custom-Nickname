@@ -7,9 +7,7 @@ import dev.dasuro.customnickname.util.ColorParser;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.text.MutableText;
-import net.minecraft.text.Style;
 import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -42,17 +40,23 @@ public class PlayerListEntryMixin {
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        Text baseName = Text.literal(currentName != null ? currentName : "");
         Team team = self.getScoreboardTeam();
-        if (team != null && team.getColor().getColorValue() != null) {
-            baseName = Text.literal(currentName != null ? currentName : "").setStyle(
-                    Style.EMPTY.withColor(TextColor.fromRgb(team.getColor().getColorValue()))
-            );
+        // Use Team.decorateName() as color reference – this gives us the team
+        // color that Vanilla applies to the bare player name (matching the
+        // EntityRendererMixin / nametag behavior). We must NOT use the server-
+        // set displayName field because it contains the full prefix+name
+        // formatting (e.g. "[light-blue number][dark-gray dash][name]") and
+        // extractFirstStyle() would pick up the prefix color instead of the
+        // name color.
+        Text baseName;
+        if (team != null) {
+            baseName = Team.decorateName(team, Text.literal(currentName != null ? currentName : ""));
+        } else {
+            baseName = Text.literal(currentName != null ? currentName : "");
         }
         MutableText nickComponent = ColorParser.buildNick(nick, baseName);
 
         MutableText full = Text.empty();
-
         if (team != null && nick.showPrefix) full.append(team.getPrefix());
         full.append(nickComponent);
         if (team != null && nick.showSuffix) full.append(team.getSuffix());

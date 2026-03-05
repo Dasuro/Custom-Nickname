@@ -15,6 +15,7 @@ import net.minecraft.scoreboard.Team;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.PlainTextContent;
 import net.minecraft.text.Text;
+import net.minecraft.text.TranslatableTextContent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -157,12 +158,18 @@ public abstract class ScoreboardHudMixin {
             }
         }
 
-        // The nickname itself
-        Text baseName = Text.literal(bestName);
-        if (team != null && team.getColor().getColorValue() != null) {
+        // The nickname itself – use the style from the original text segment
+        // at the match position as color reference, falling back to team color.
+        net.minecraft.text.Style nameStyle = customnickname$getStyleAtPosition(segments, bestStart);
+        Text baseName;
+        if (nameStyle != null && nameStyle.getColor() != null) {
+            baseName = Text.literal(bestName).setStyle(nameStyle);
+        } else if (team != null && team.getColor().getColorValue() != null) {
             baseName = Text.literal(bestName).setStyle(
                     net.minecraft.text.Style.EMPTY.withColor(net.minecraft.text.TextColor.fromRgb(team.getColor().getColorValue()))
             );
+        } else {
+            baseName = Text.literal(bestName);
         }
         result.append(ColorParser.buildNick(nickEntry, baseName));
 
@@ -213,12 +220,24 @@ public abstract class ScoreboardHudMixin {
      */
     @Unique
     private static void customnickname$flattenText(Text text, List<StyledSegment> out) {
-        String literal = "";
         if (text.getContent() instanceof PlainTextContent plain) {
-            literal = plain.string();
-        }
-        if (!literal.isEmpty()) {
-            out.add(new StyledSegment(literal, text.getStyle()));
+            String literal = plain.string();
+            if (!literal.isEmpty()) {
+                out.add(new StyledSegment(literal, text.getStyle()));
+            }
+        } else if (text.getContent() instanceof TranslatableTextContent tc) {
+            for (Object arg : tc.getArgs()) {
+                if (arg instanceof Text argText) {
+                    customnickname$flattenText(argText, out);
+                } else if (arg instanceof String argStr && !argStr.isEmpty()) {
+                    out.add(new StyledSegment(argStr, text.getStyle()));
+                }
+            }
+        } else {
+            String fallback = text.copyContentOnly().getString();
+            if (fallback != null && !fallback.isEmpty()) {
+                out.add(new StyledSegment(fallback, text.getStyle()));
+            }
         }
         for (Text sibling : text.getSiblings()) {
             customnickname$flattenText(sibling, out);
@@ -255,5 +274,23 @@ public abstract class ScoreboardHudMixin {
                 || (c >= 'a' && c <= 'z')
                 || (c >= '0' && c <= '9')
                 || c == '_';
+    }
+
+    /**
+     * Returns the Style active at the given character position in the
+     * flattened segment list.  Used to determine the original color the
+     * server applied to the player name.
+     */
+    @Unique
+    private static net.minecraft.text.Style customnickname$getStyleAtPosition(List<StyledSegment> segments, int position) {
+        int pos = 0;
+        for (StyledSegment seg : segments) {
+            int segEnd = pos + seg.text.length();
+            if (position >= pos && position < segEnd) {
+                return seg.style;
+            }
+            pos = segEnd;
+        }
+        return null;
     }
 }

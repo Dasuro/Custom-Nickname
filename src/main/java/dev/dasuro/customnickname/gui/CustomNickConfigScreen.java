@@ -558,8 +558,10 @@ public class CustomNickConfigScreen extends Screen {
                 int previewTextX = boxX + 5 + labelW;
 
                 int scissorRight = boxRight - 5;
-                if (scissorRight > previewTextX) {
-                    context.enableScissor(previewTextX, boxY, scissorRight, boxBottom);
+                // Start scissor 2px earlier so italic text isn't clipped on the left
+                int scissorLeft = previewTextX - 2;
+                if (scissorRight > scissorLeft) {
+                    context.enableScissor(scissorLeft, boxY, scissorRight, boxBottom);
                 }
 
                 context.drawTextWithShadow(
@@ -570,7 +572,7 @@ public class CustomNickConfigScreen extends Screen {
                         0xFFFFFFFF
                 );
 
-                if (scissorRight > previewTextX) {
+                if (scissorRight > scissorLeft) {
                     context.disableScissor();
                 }
             }

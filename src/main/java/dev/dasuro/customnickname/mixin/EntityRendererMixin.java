@@ -10,9 +10,7 @@ import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.entity.PlayerLikeEntity;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.text.MutableText;
-import net.minecraft.text.Style;
 import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -43,11 +41,14 @@ public class EntityRendererMixin {
 
         Team team = player.getScoreboardTeam();
 
-        // Base: use the real name as text, with team color applied so that
-        // buildNick can preserve the original color when no explicit color codes are used.
-        MutableText base = Text.literal(currentName);
-        if (team != null && team.getColor().getColorValue() != null) {
-            base.setStyle(Style.EMPTY.withColor(TextColor.fromRgb(team.getColor().getColorValue())));
+        // Determine the base color: use Team.decorateName() which provides
+        // the server's intended styling (team color). This is the same color
+        // that Vanilla would show for this player.
+        Text base;
+        if (team != null) {
+            base = Team.decorateName(team, Text.literal(currentName != null ? currentName : ""));
+        } else {
+            base = Text.literal(currentName != null ? currentName : "");
         }
         MutableText nickComponent = ColorParser.buildNick(nick, base);
         MutableText full = Text.empty();
