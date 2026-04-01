@@ -203,15 +203,31 @@ public abstract class ScoreboardHudMixin {
      */
     @Unique
     private static String customnickname$removeTeamPart(String text, String teamPart) {
-        if (teamPart == null || teamPart.isEmpty()) return text;
+        if (text == null || text.isEmpty() || teamPart == null || teamPart.isEmpty()) return text;
+
         if (text.startsWith(teamPart)) {
             return text.substring(teamPart.length());
         }
-        // Trim and try again (sometimes there are extra spaces)
+
         String trimmedTeam = teamPart.trim();
         if (!trimmedTeam.isEmpty() && text.startsWith(trimmedTeam)) {
             return text.substring(trimmedTeam.length());
         }
+
+        int ws = 0;
+        while (ws < text.length() && Character.isWhitespace(text.charAt(ws))) {
+            ws++;
+        }
+        if (ws > 0) {
+            String noLeadingWs = text.substring(ws);
+            if (noLeadingWs.startsWith(teamPart)) {
+                return noLeadingWs.substring(teamPart.length());
+            }
+            if (!trimmedTeam.isEmpty() && noLeadingWs.startsWith(trimmedTeam)) {
+                return noLeadingWs.substring(trimmedTeam.length());
+            }
+        }
+
         return text;
     }
 

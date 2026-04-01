@@ -5,8 +5,11 @@ import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.util.ColorParser;
 import dev.dasuro.customnickname.util.MojangLookup;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.input.CharInput;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -14,6 +17,7 @@ import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.Text;
 
 import java.util.UUID;
+import java.util.Locale;
 
 public class EditEntryScreen extends Screen {
     private final Screen parent;
@@ -26,15 +30,23 @@ public class EditEntryScreen extends Screen {
 
     private SliderWidget speedSlider;
     private int previewY = -1;
+    private ErrorModal errorModal;
+
+    private static final String I18N_BASE = "gui.customnickname.edit.";
 
     public EditEntryScreen(Screen parent, UUID uuid) {
-        super(Text.literal("Edit Entry"));
+        super(Text.translatable(I18N_BASE + "title"));
         this.parent = parent;
         this.uuid = uuid;
     }
 
     @Override
     protected void init() {
+        if (this.errorModal == null) {
+            this.errorModal = new ErrorModal(this.textRenderer);
+        }
+        this.errorModal.setScreenSize(this.width, this.height);
+
         this.clearChildren();
 
         // Work on a copy so "Back" discards changes
@@ -64,7 +76,7 @@ public class EditEntryScreen extends Screen {
                 y,
                 w,
                 20,
-                Text.literal("Username")
+                t("field.username")
         );
         // Keep username length reasonable (matches typical MC constraints)
         usernameField.setMaxLength(16);
@@ -77,7 +89,7 @@ public class EditEntryScreen extends Screen {
                 y + 30,
                 w,
                 20,
-                Text.literal("Nickname")
+                t("field.nickname")
         );
         // Allow long input (hex gradients can get very long)
         nicknameField.setMaxLength(4096);
@@ -89,14 +101,10 @@ public class EditEntryScreen extends Screen {
 
         this.addDrawableChild(
                 ButtonWidget.builder(
-                                Text.literal(toggleLabel("Show prefix", entry.showPrefix)),
+                                toggleLabel("toggle.show_prefix", entry.showPrefix),
                                 b -> {
                                     entry.showPrefix = !entry.showPrefix;
-                                    b.setMessage(
-                                            Text.literal(
-                                                    toggleLabel("Show prefix", entry.showPrefix)
-                                            )
-                                    );
+                                    b.setMessage(toggleLabel("toggle.show_prefix", entry.showPrefix));
                                 }
                         )
                         .dimensions(x, btnY, btnW, 20)
@@ -105,14 +113,10 @@ public class EditEntryScreen extends Screen {
 
         this.addDrawableChild(
                 ButtonWidget.builder(
-                                Text.literal(toggleLabel("Show suffix", entry.showSuffix)),
+                                toggleLabel("toggle.show_suffix", entry.showSuffix),
                                 b -> {
                                     entry.showSuffix = !entry.showSuffix;
-                                    b.setMessage(
-                                            Text.literal(
-                                                    toggleLabel("Show suffix", entry.showSuffix)
-                                            )
-                                    );
+                                    b.setMessage(toggleLabel("toggle.show_suffix", entry.showSuffix));
                                 }
                         )
                         .dimensions(x + btnW + 10, btnY, btnW, 20)
@@ -121,14 +125,10 @@ public class EditEntryScreen extends Screen {
 
         this.addDrawableChild(
                 ButtonWidget.builder(
-                                Text.literal(toggleLabel("Rainbow wave", entry.rainbow)),
+                                toggleLabel("toggle.rainbow_wave", entry.rainbow),
                                 b -> {
                                     entry.rainbow = !entry.rainbow;
-                                    b.setMessage(
-                                            Text.literal(
-                                                    toggleLabel("Rainbow wave", entry.rainbow)
-                                            )
-                                    );
+                                    b.setMessage(toggleLabel("toggle.rainbow_wave", entry.rainbow));
                                     if (speedSlider != null) {
                                         speedSlider.active = entry.rainbow;
                                     }
@@ -143,7 +143,7 @@ public class EditEntryScreen extends Screen {
                 btnY + 30,
                 btnW,
                 20,
-                Text.literal(""),
+                Text.empty(),
                 (entry.rainbowSpeed - 0.1f) / 4.9f
         ) {
             {
@@ -153,9 +153,8 @@ public class EditEntryScreen extends Screen {
             @Override
             protected void updateMessage() {
                 entry.rainbowSpeed = (float) (0.1f + this.value * 4.9f);
-                this.setMessage(
-                        Text.literal(String.format("Rainbow speed: %.1fx", entry.rainbowSpeed))
-                );
+                String speed = String.format(Locale.ROOT, "%.1f", entry.rainbowSpeed);
+                this.setMessage(t("rainbow_speed", speed));
             }
 
             @Override
@@ -178,18 +177,18 @@ public class EditEntryScreen extends Screen {
         this.previewY = Math.min(rawPreviewY, yBottom2 - 30);
 
         this.addDrawableChild(
-                ButtonWidget.builder(Text.literal("Save"), b -> {
+                ButtonWidget.builder(t("button.save"), b -> {
                             String name = usernameField.getText().trim();
                             String nick = nicknameField.getText();
 
                             if (name.isBlank()) {
-                                sendChat("Custom Nickname: username is required.");
+                                showError("gui.customnickname.error.username_required");
                                 return;
                             }
 
                             String visibleNick = ColorParser.strip(nick);
                             if (nick == null || nick.isBlank() || visibleNick.isBlank()) {
-                                sendChat("Custom Nickname: nickname is required (formatting codes alone are not enough).");
+                                showError("gui.customnickname.error.nickname_required_formatting_only");
                                 return;
                             }
 
@@ -201,14 +200,14 @@ public class EditEntryScreen extends Screen {
                             boolean usernameChanged = originalName != null && !name.equalsIgnoreCase(originalName);
 
                             if (!usernameChanged) {
-                                // Username unchanged – just save under the same UUID
+                                // Username unchanged - just save under the same UUID
                                 entry.username = name;
                                 NickConfig.set(uuid, entry);
                                 MinecraftClient.getInstance().setScreen(parent);
                                 return;
                             }
 
-                            // Username changed – resolve new UUID like saveAdd() does
+                            // Username changed - resolve new UUID like saveAdd() does
                             UUID onlineUuid = findOnlineUuid(name);
                             if (onlineUuid != null) {
                                 entry.username = findOnlineExactName(name);
@@ -218,11 +217,14 @@ public class EditEntryScreen extends Screen {
                                 return;
                             }
 
-                            // Not online – try Mojang API (async)
+                            // Not online - try Mojang API (async)
                             MojangLookup.resolveByName(name).thenAccept(profile -> {
                                 MinecraftClient.getInstance().execute(() -> {
+                                    if (MinecraftClient.getInstance().currentScreen != this) {
+                                        return;
+                                    }
                                     if (profile == null) {
-                                        sendChat("Custom Nickname: could not resolve UUID for \"" + name + "\".");
+                                        showError("gui.customnickname.error.uuid_for_name_not_found", name);
                                         return;
                                     }
                                     entry.username = profile.name();
@@ -237,7 +239,7 @@ public class EditEntryScreen extends Screen {
         );
 
         this.addDrawableChild(
-                ButtonWidget.builder(Text.literal("Back"), b -> {
+                ButtonWidget.builder(t("button.back"), b -> {
                             MinecraftClient.getInstance().setScreen(parent);
                         })
                         .dimensions(startX2 + btnW2 + gap2, yBottom2, btnW2, 20)
@@ -254,11 +256,15 @@ public class EditEntryScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
+        boolean modalOpen = errorModal != null && errorModal.isOpen();
+        int uiMouseX = modalOpen ? -10000 : mouseX;
+        int uiMouseY = modalOpen ? -10000 : mouseY;
+
+        super.render(context, uiMouseX, uiMouseY, delta);
 
         context.drawTextWithShadow(
                 this.textRenderer,
-                Text.literal("Edit Entry"),
+                t("title"),
                 10,
                 10,
                 0xFFFFFF
@@ -295,13 +301,13 @@ public class EditEntryScreen extends Screen {
 
                 context.drawTextWithShadow(
                         this.textRenderer,
-                        Text.literal("Preview: "),
+                        t("preview_label"),
                         boxX + 5,
                         y,
                         0xFFAAAAAA
                 );
 
-                int labelW = this.textRenderer.getWidth("Preview: ");
+                int labelW = this.textRenderer.getWidth(t("preview_label"));
                 int previewTextX = boxX + 5 + labelW;
 
                 int scissorRight = boxRight - 5;
@@ -324,6 +330,58 @@ public class EditEntryScreen extends Screen {
                 }
             }
         }
+
+        if (errorModal != null) {
+            errorModal.render(context, mouseX, mouseY, delta);
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubleClick) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.mouseClicked(click, doubleClick);
+        }
+        return super.mouseClicked(click, doubleClick);
+    }
+
+    @Override
+    public boolean mouseReleased(Click click) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.mouseReleased(click);
+        }
+        return super.mouseReleased(click);
+    }
+
+    @Override
+    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.mouseDragged(click, deltaX, deltaY);
+        }
+        return super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean keyPressed(KeyInput keyInput) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.keyPressed(keyInput);
+        }
+        return super.keyPressed(keyInput);
+    }
+
+    @Override
+    public boolean charTyped(CharInput charInput) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.charTyped(charInput);
+        }
+        return super.charTyped(charInput);
     }
 
     @Override
@@ -331,14 +389,24 @@ public class EditEntryScreen extends Screen {
         MinecraftClient.getInstance().setScreen(parent);
     }
 
-    private static String toggleLabel(String name, boolean value) {
-        return name + ": " + (value ? "ON" : "OFF");
+    private static Text t(String key, Object... args) {
+        return Text.translatable(I18N_BASE + key, args);
     }
 
-    private void sendChat(String msg) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player == null) return;
-        mc.player.sendMessage(Text.literal(msg), false);
+    private static Text toggleLabel(String labelKey, boolean value) {
+        return Text.translatable(
+                I18N_BASE + "toggle",
+                t(labelKey),
+                value ? t("state.on") : t("state.off")
+        );
+    }
+
+    private void showError(String translationKey, Object... args) {
+        if (errorModal == null) {
+            errorModal = new ErrorModal(this.textRenderer);
+            errorModal.setScreenSize(this.width, this.height);
+        }
+        errorModal.show(Text.translatable(translationKey, args));
     }
 
     private UUID findOnlineUuid(String name) {
@@ -363,3 +431,4 @@ public class EditEntryScreen extends Screen {
         return name;
     }
 }
+

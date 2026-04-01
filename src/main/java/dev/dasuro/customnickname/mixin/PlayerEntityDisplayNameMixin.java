@@ -2,8 +2,8 @@ package dev.dasuro.customnickname.mixin;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
-import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
+import dev.dasuro.customnickname.util.NickDisplayBuilder;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.text.MutableText;
@@ -34,25 +34,9 @@ public class PlayerEntityDisplayNameMixin {
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        // Use the original return value from PlayerEntity.getDisplayName().
-        // This contains the server-intended styling (color from team or
-        // server-set display name).
         Text originalResult = cir.getReturnValue();
-        Text baseName = originalResult != null ? originalResult : Text.literal(currentName != null ? currentName : "");
         Team team = self.getScoreboardTeam();
-        MutableText nickComponent = ColorParser.buildNick(nick, baseName);
-
-        MutableText full = Text.empty();
-
-        if (team != null && nick.showPrefix) full.append(team.getPrefix());
-        full.append(nickComponent);
-        if (team != null && nick.showSuffix) full.append(team.getSuffix());
-
-        if (StorageConfig.isShowIndicator()) {
-            full.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
-        }
-
-        cir.setReturnValue(full);
+        cir.setReturnValue(NickDisplayBuilder.replaceInOriginalOrFallback(originalResult, currentName, nick, team));
     }
 
     @Inject(method = "getName", at = @At("RETURN"), cancellable = true)
@@ -66,15 +50,12 @@ public class PlayerEntityDisplayNameMixin {
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        // getName() returns just the plain name – use the original as color ref
+        // Some nametag render paths use getName() directly; include configured team affixes here.
         Text originalResult = cir.getReturnValue();
-        Text baseName = originalResult != null ? originalResult : Text.literal(currentName != null ? currentName : "");
+        Team team = self.getScoreboardTeam();
+        Text baseName = NickDisplayBuilder.buildStyledBaseName(currentName, originalResult, team);
         MutableText nickComponent = ColorParser.buildNick(nick, baseName);
 
-        // getName() should return just the name without team decorations,
-        // as getDisplayName() adds team prefix/suffix on top of getName()
-        cir.setReturnValue(nickComponent);
+        cir.setReturnValue(NickDisplayBuilder.buildDisplay(nick, team, nickComponent));
     }
 }
-
-

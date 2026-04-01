@@ -3,11 +3,13 @@ package dev.dasuro.customnickname.gui;
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.config.StorageConfig;
+import dev.dasuro.customnickname.gui.widget.FramedButtonWidget;
 import dev.dasuro.customnickname.util.ColorParser;
 import dev.dasuro.customnickname.util.MojangLookup;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.Element;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.Selectable;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.Tooltip;
@@ -15,6 +17,8 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ElementListWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.input.CharInput;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.Text;
 
@@ -23,6 +27,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Locale;
 
 public class CustomNickConfigScreen extends Screen {
     private enum Tab {
@@ -54,49 +59,64 @@ public class CustomNickConfigScreen extends Screen {
     private int optionsLabelY;
     private int indicatorLabelX;
     private int indicatorLabelY;
+    private ErrorModal errorModal;
+    private ButtonWidget addTabBtn;
+    private ButtonWidget entriesTabBtn;
+    private ButtonWidget optionsTabBtn;
+
+    private static final String I18N_BASE = "gui.customnickname.config.";
 
     public CustomNickConfigScreen(Screen parent) {
-        super(Text.literal("Custom Nickname"));
+        super(Text.translatable("gui.customnickname.title"));
         this.parent = parent;
     }
 
     @Override
     protected void init() {
+        if (this.errorModal == null) {
+            this.errorModal = new ErrorModal(this.textRenderer);
+        }
+        this.errorModal.setScreenSize(this.width, this.height);
+
         this.clearChildren();
 
         int tabHeight = 24;
-        int tabWidth = (this.width - 20) / 3;
+        int tabGap = 4;
+        int tabWidth = (this.width - 20 - tabGap * 2) / 3;
         int tabX = 10;
         int tabY = 10;
 
-        ButtonWidget addTabBtn = ButtonWidget.builder(Text.literal("Add"), b -> {
+        this.addTabBtn = ButtonWidget.builder(t("tab.add"), b -> {
                     tab = Tab.ADD;
                     init();
                 })
                 .dimensions(tabX, tabY, tabWidth, tabHeight)
                 .build();
-        addTabBtn.active = tab != Tab.ADD;
-        this.addDrawableChild(addTabBtn);
+        this.addTabBtn.active = true;
+        this.addTabBtn.setAlpha(0.0f);
+        this.addDrawableChild(this.addTabBtn);
 
-        ButtonWidget entriesTabBtn = ButtonWidget.builder(Text.literal("Nicknames"), b -> {
+        this.entriesTabBtn = ButtonWidget.builder(t("tab.entries"), b -> {
                     tab = Tab.ENTRIES;
                     init();
                 })
-                .dimensions(tabX + tabWidth, tabY, tabWidth, tabHeight)
+                .dimensions(tabX + tabWidth + tabGap, tabY, tabWidth, tabHeight)
                 .build();
-        entriesTabBtn.active = tab != Tab.ENTRIES;
-        this.addDrawableChild(entriesTabBtn);
+        this.entriesTabBtn.active = true;
+        this.entriesTabBtn.setAlpha(0.0f);
+        this.addDrawableChild(this.entriesTabBtn);
 
-        ButtonWidget optionsTabBtn = ButtonWidget.builder(Text.literal("Options"), b -> {
+        this.optionsTabBtn = ButtonWidget.builder(t("tab.options"), b -> {
                     tab = Tab.OPTIONS;
                     init();
                 })
-                .dimensions(tabX + tabWidth * 2, tabY, tabWidth, tabHeight)
+                .dimensions(tabX + (tabWidth + tabGap) * 2, tabY, tabWidth, tabHeight)
                 .build();
-        optionsTabBtn.active = tab != Tab.OPTIONS;
-        this.addDrawableChild(optionsTabBtn);
+        this.optionsTabBtn.active = true;
+        this.optionsTabBtn.setAlpha(0.0f);
+        this.addDrawableChild(this.optionsTabBtn);
 
-        int contentTop = tabY + tabHeight + 10;
+        int contentTop = tabY + tabHeight + 8;
 
         if (tab == Tab.ADD) {
             initAdd(contentTop);
@@ -112,7 +132,7 @@ public class CustomNickConfigScreen extends Screen {
             int btnX = (this.width - btnWidth) / 2;
 
             this.addDrawableChild(
-                    ButtonWidget.builder(Text.literal("Done"), b -> {
+                    ButtonWidget.builder(t("button.done"), b -> {
                                 NickConfig.save();
                                 this.close();
                             })
@@ -132,9 +152,9 @@ public class CustomNickConfigScreen extends Screen {
                 top,
                 w,
                 20,
-                Text.literal("Username")
+                t("field.username")
         );
-        addUsername.setPlaceholder(Text.literal("Username"));
+        addUsername.setPlaceholder(t("placeholder.username"));
         // Keep username length reasonable (matches typical MC constraints)
         addUsername.setMaxLength(16);
         this.addDrawableChild(addUsername);
@@ -145,11 +165,9 @@ public class CustomNickConfigScreen extends Screen {
                 top + 30,
                 w,
                 20,
-                Text.literal("Nickname")
+                t("field.nickname")
         );
-        addNickname.setPlaceholder(
-                Text.literal("Nickname (supports &a, &#FF0000, ...)")
-        );
+        addNickname.setPlaceholder(t("placeholder.nickname"));
         addNickname.setMaxLength(4096);
         this.addDrawableChild(addNickname);
 
@@ -158,14 +176,10 @@ public class CustomNickConfigScreen extends Screen {
 
         this.addDrawableChild(
                 ButtonWidget.builder(
-                                Text.literal(toggleLabel("Show prefix", addShowPrefix)),
+                                toggleLabel("toggle.show_prefix", addShowPrefix),
                                 b -> {
                                     addShowPrefix = !addShowPrefix;
-                                    b.setMessage(
-                                            Text.literal(
-                                                    toggleLabel("Show prefix", addShowPrefix)
-                                            )
-                                    );
+                                    b.setMessage(toggleLabel("toggle.show_prefix", addShowPrefix));
                                 }
                         )
                         .dimensions(x, btnY, btnW, 20)
@@ -174,14 +188,10 @@ public class CustomNickConfigScreen extends Screen {
 
         this.addDrawableChild(
                 ButtonWidget.builder(
-                                Text.literal(toggleLabel("Show suffix", addShowSuffix)),
+                                toggleLabel("toggle.show_suffix", addShowSuffix),
                                 b -> {
                                     addShowSuffix = !addShowSuffix;
-                                    b.setMessage(
-                                            Text.literal(
-                                                    toggleLabel("Show suffix", addShowSuffix)
-                                            )
-                                    );
+                                    b.setMessage(toggleLabel("toggle.show_suffix", addShowSuffix));
                                 }
                         )
                         .dimensions(x + btnW + 10, btnY, btnW, 20)
@@ -190,14 +200,10 @@ public class CustomNickConfigScreen extends Screen {
 
         this.addDrawableChild(
                 ButtonWidget.builder(
-                                Text.literal(toggleLabel("Rainbow wave", addRainbowWave)),
+                                toggleLabel("toggle.rainbow_wave", addRainbowWave),
                                 b -> {
                                     addRainbowWave = !addRainbowWave;
-                                    b.setMessage(
-                                            Text.literal(
-                                                    toggleLabel("Rainbow wave", addRainbowWave)
-                                            )
-                                    );
+                                    b.setMessage(toggleLabel("toggle.rainbow_wave", addRainbowWave));
                                     if (rainbowSpeedSlider != null) {
                                         rainbowSpeedSlider.active = addRainbowWave;
                                     }
@@ -212,7 +218,7 @@ public class CustomNickConfigScreen extends Screen {
                 btnY + 30,
                 btnW,
                 20,
-                Text.literal(""),
+                Text.empty(),
                 (addRainbowSpeed - 0.1f) / 4.9f
         ) {
             {
@@ -222,9 +228,8 @@ public class CustomNickConfigScreen extends Screen {
             @Override
             protected void updateMessage() {
                 addRainbowSpeed = (float) (0.1f + this.value * 4.9f);
-                this.setMessage(
-                        Text.literal(String.format("Rainbow speed: %.1fx", addRainbowSpeed))
-                );
+                String speed = String.format(Locale.ROOT, "%.1f", addRainbowSpeed);
+                this.setMessage(t("rainbow_speed", speed));
             }
 
             @Override
@@ -247,13 +252,13 @@ public class CustomNickConfigScreen extends Screen {
         this.addPreviewY = Math.min(rawPreviewY, yBottom2 - 30);
 
         this.addDrawableChild(
-                ButtonWidget.builder(Text.literal("Save"), b -> saveAdd())
+                ButtonWidget.builder(t("button.save"), b -> saveAdd())
                         .dimensions(startX2, yBottom2, btnW2, 20)
                         .build()
         );
 
         this.addDrawableChild(
-                ButtonWidget.builder(Text.literal("Done"), b -> {
+                ButtonWidget.builder(t("button.done"), b -> {
                             NickConfig.save();
                             this.close();
                         })
@@ -267,18 +272,18 @@ public class CustomNickConfigScreen extends Screen {
         String nick = addNickname.getText();
 
         if (name.isBlank()) {
-            sendChat("Custom Nickname: username is required.");
+            showError("gui.customnickname.error.username_required");
             return;
         }
 
         if (nick == null || nick.isBlank()) {
-            sendChat("Custom Nickname: nickname is required.");
+            showError("gui.customnickname.error.nickname_required");
             return;
         }
 
         String visibleNick = ColorParser.strip(nick);
         if (visibleNick.isBlank()) {
-            sendChat("Custom Nickname: nickname is required (formatting codes alone are not enough).");
+            showError("gui.customnickname.error.nickname_required_formatting_only");
             return;
         }
 
@@ -302,8 +307,11 @@ public class CustomNickConfigScreen extends Screen {
 
         MojangLookup.resolveByName(name).thenAccept(profile -> {
             MinecraftClient.getInstance().execute(() -> {
+                if (MinecraftClient.getInstance().currentScreen != this) {
+                    return;
+                }
                 if (profile == null) {
-                    sendChat("Custom Nickname: could not resolve UUID.");
+                    showError("gui.customnickname.error.uuid_not_found");
                     return;
                 }
                 entry.username = profile.name();
@@ -330,7 +338,7 @@ public class CustomNickConfigScreen extends Screen {
     }
 
     private void initEntries(int top) {
-        int searchLabelWidth = this.textRenderer.getWidth("Search: ");
+        int searchLabelWidth = this.textRenderer.getWidth(t("search_label"));
         int searchFieldX = 20 + searchLabelWidth;
         int searchFieldW = this.width - 40 - searchLabelWidth;
 
@@ -340,7 +348,7 @@ public class CustomNickConfigScreen extends Screen {
                 top,
                 searchFieldW,
                 20,
-                Text.literal("Search")
+                t("field.search")
         );
         searchField.setMaxLength(256);
         searchField.setChangedListener(query -> refreshEntries());
@@ -404,8 +412,7 @@ public class CustomNickConfigScreen extends Screen {
     private void initOptions(int top) {
         boolean isGlobal = StorageConfig.getMode() == StorageConfig.StorageMode.GLOBAL;
 
-        String labelStr = "Storage Mode:  ";
-        int labelWidth = this.textRenderer.getWidth(labelStr);
+        int labelWidth = this.textRenderer.getWidth(t("storage_mode_label"));
         int btnW = 80;
         int btnH = 20;
         int gap = 4;
@@ -416,25 +423,23 @@ public class CustomNickConfigScreen extends Screen {
         int btnX = startX + labelWidth;
 
         // "Global" button with tooltip
-        ButtonWidget globalBtn = ButtonWidget.builder(Text.literal("Global"), b -> {
+        ButtonWidget globalBtn = ButtonWidget.builder(t("button.global"), b -> {
                     NickConfig.switchMode(StorageConfig.StorageMode.GLOBAL);
                     init();
                 })
                 .dimensions(btnX, top, btnW, btnH)
-                .tooltip(Tooltip.of(
-                        Text.literal("Shared across all instances (.minecraft)")))
+                .tooltip(Tooltip.of(t("tooltip.global")))
                 .build();
         globalBtn.active = !isGlobal;
         this.addDrawableChild(globalBtn);
 
         // "Local" button with tooltip
-        ButtonWidget localBtn = ButtonWidget.builder(Text.literal("Local"), b -> {
+        ButtonWidget localBtn = ButtonWidget.builder(t("button.local"), b -> {
                     NickConfig.switchMode(StorageConfig.StorageMode.LOCAL);
                     init();
                 })
                 .dimensions(btnX + btnW + gap, top, btnW, btnH)
-                .tooltip(Tooltip.of(
-                        Text.literal("Only for this modpack instance")))
+                .tooltip(Tooltip.of(t("tooltip.local")))
                 .build();
         localBtn.active = isGlobal;
         this.addDrawableChild(localBtn);
@@ -445,24 +450,23 @@ public class CustomNickConfigScreen extends Screen {
 
         // --- Indicator toggle ---
         int indicatorY = top + btnH + 10;
-        String indicatorLabelStr = "Nickname Indicator:  ";
-        int indicatorLabelWidth = this.textRenderer.getWidth(indicatorLabelStr);
+        int indicatorLabelWidth = this.textRenderer.getWidth(t("indicator_label"));
         int indicatorBtnW = 60;
         int indicatorTotalW = indicatorLabelWidth + indicatorBtnW;
         int indicatorStartX = (this.width - indicatorTotalW) / 2;
 
         ButtonWidget indicatorBtn = ButtonWidget.builder(
-                        Text.literal(StorageConfig.isShowIndicator() ? "ON" : "OFF"),
+                        StorageConfig.isShowIndicator() ? t("state.on") : t("state.off"),
                         b -> {
                             StorageConfig.setShowIndicator(!StorageConfig.isShowIndicator());
-                            b.setMessage(Text.literal(StorageConfig.isShowIndicator() ? "ON" : "OFF"));
+                            b.setMessage(StorageConfig.isShowIndicator() ? t("state.on") : t("state.off"));
                         })
                 .dimensions(indicatorStartX + indicatorLabelWidth, indicatorY, indicatorBtnW, btnH)
                 .tooltip(Tooltip.of(
                         Text.empty()
-                                .append(Text.literal("Shows a "))
+                                .append(t("tooltip.indicator_prefix"))
                                 .append(Text.literal("\u270E").styled(s -> s.withColor(0xFFFF00)))
-                                .append(Text.literal(" next to nicknamed players or with nicknamed players in a chat massage."))))
+                                .append(t("tooltip.indicator_suffix"))))
                 .build();
         this.addDrawableChild(indicatorBtn);
 
@@ -479,21 +483,57 @@ public class CustomNickConfigScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        boolean modalOpen = errorModal != null && errorModal.isOpen();
+        int uiMouseX = modalOpen ? -10000 : mouseX;
+        int uiMouseY = modalOpen ? -10000 : mouseY;
+
         // IMPORTANT: super.render already calls renderBackground (blur).
-        super.render(context, mouseX, mouseY, delta);
+        super.render(context, uiMouseX, uiMouseY, delta);
 
         context.drawTextWithShadow(
                 this.textRenderer,
-                Text.literal("Custom Nickname"),
+                Text.translatable("gui.customnickname.title"),
                 10,
                 2,
                 0xFFFFFF
         );
 
+        if (this.addTabBtn != null) {
+            FramedButtonWidget.renderTab(context, this.addTabBtn, this.addTabBtn.getMessage(), uiMouseX, uiMouseY, tab == Tab.ADD);
+        }
+        if (this.entriesTabBtn != null) {
+            FramedButtonWidget.renderTab(context, this.entriesTabBtn, this.entriesTabBtn.getMessage(), uiMouseX, uiMouseY, tab == Tab.ENTRIES);
+        }
+        if (this.optionsTabBtn != null) {
+            FramedButtonWidget.renderTab(context, this.optionsTabBtn, this.optionsTabBtn.getMessage(), uiMouseX, uiMouseY, tab == Tab.OPTIONS);
+        }
+
+        // Draw the top edge of the content area but leave a gap under the active tab.
+        ButtonWidget activeTabButton = switch (tab) {
+            case ADD -> this.addTabBtn;
+            case ENTRIES -> this.entriesTabBtn;
+            case OPTIONS -> this.optionsTabBtn;
+        };
+        if (activeTabButton != null) {
+            int lineY = activeTabButton.getY() + activeTabButton.getHeight() - 1;
+            int left = 0;
+            int right = this.width;
+            int gapLeft = activeTabButton.getX() + 1;
+            int gapRight = activeTabButton.getX() + activeTabButton.getWidth() - 1;
+            int lineColor = 0xFFA0A0A0;
+
+            if (left < gapLeft) {
+                context.fill(left, lineY, gapLeft, lineY + 1, lineColor);
+            }
+            if (gapRight < right) {
+                context.fill(gapRight, lineY, right, lineY + 1, lineColor);
+            }
+        }
+
         if (tab == Tab.ENTRIES && searchField != null) {
             context.drawTextWithShadow(
                     this.textRenderer,
-                    Text.literal("Search: "),
+                    t("search_label"),
                     20,
                     searchField.getY() + (searchField.getHeight() - this.textRenderer.fontHeight) / 2 + 1,
                     0xFFAAAAAA
@@ -503,14 +543,14 @@ public class CustomNickConfigScreen extends Screen {
         if (tab == Tab.OPTIONS) {
             context.drawTextWithShadow(
                     this.textRenderer,
-                    Text.literal("Storage Mode:  "),
+                    t("storage_mode_label"),
                     optionsLabelX,
                     optionsLabelY,
                     0xFFFFFFFF
             );
             context.drawTextWithShadow(
                     this.textRenderer,
-                    Text.literal("Nickname Indicator:  "),
+                    t("indicator_label"),
                     indicatorLabelX,
                     indicatorLabelY,
                     0xFFFFFFFF
@@ -548,13 +588,13 @@ public class CustomNickConfigScreen extends Screen {
 
                 context.drawTextWithShadow(
                         this.textRenderer,
-                        Text.literal("Preview: "),
+                        t("preview_label"),
                         boxX + 5,
                         y,
                         0xFFAAAAAA
                 );
 
-                int labelW = this.textRenderer.getWidth("Preview: ");
+                int labelW = this.textRenderer.getWidth(t("preview_label"));
                 int previewTextX = boxX + 5 + labelW;
 
                 int scissorRight = boxRight - 5;
@@ -577,6 +617,58 @@ public class CustomNickConfigScreen extends Screen {
                 }
             }
         }
+
+        if (errorModal != null) {
+            errorModal.render(context, mouseX, mouseY, delta);
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubleClick) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.mouseClicked(click, doubleClick);
+        }
+        return super.mouseClicked(click, doubleClick);
+    }
+
+    @Override
+    public boolean mouseReleased(Click click) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.mouseReleased(click);
+        }
+        return super.mouseReleased(click);
+    }
+
+    @Override
+    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.mouseDragged(click, deltaX, deltaY);
+        }
+        return super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean keyPressed(KeyInput keyInput) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.keyPressed(keyInput);
+        }
+        return super.keyPressed(keyInput);
+    }
+
+    @Override
+    public boolean charTyped(CharInput charInput) {
+        if (errorModal != null && errorModal.isOpen()) {
+            return errorModal.charTyped(charInput);
+        }
+        return super.charTyped(charInput);
     }
 
     @Override
@@ -584,14 +676,24 @@ public class CustomNickConfigScreen extends Screen {
         MinecraftClient.getInstance().setScreen(parent);
     }
 
-    private static String toggleLabel(String name, boolean value) {
-        return name + ": " + (value ? "ON" : "OFF");
+    private static Text t(String key, Object... args) {
+        return Text.translatable(I18N_BASE + key, args);
     }
 
-    private void sendChat(String msg) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player == null) return;
-        mc.player.sendMessage(Text.literal(msg), false);
+    private static Text toggleLabel(String labelKey, boolean value) {
+        return Text.translatable(
+                I18N_BASE + "toggle",
+                t(labelKey),
+                value ? t("state.on") : t("state.off")
+        );
+    }
+
+    private void showError(String translationKey) {
+        if (errorModal == null) {
+            errorModal = new ErrorModal(this.textRenderer);
+            errorModal.setScreenSize(this.width, this.height);
+        }
+        errorModal.show(Text.translatable(translationKey));
     }
 
     private UUID findOnlineUuid(String name) {
@@ -653,7 +755,7 @@ public class CustomNickConfigScreen extends Screen {
             this.uuid = uuid;
             this.entry = entry;
 
-            this.editButton = ButtonWidget.builder(Text.literal("Edit"), b -> {
+            this.editButton = ButtonWidget.builder(t("button.edit"), b -> {
                         MinecraftClient.getInstance().setScreen(
                                 new EditEntryScreen(CustomNickConfigScreen.this, uuid)
                         );
@@ -661,7 +763,7 @@ public class CustomNickConfigScreen extends Screen {
                     .dimensions(0, 0, 50, 20)
                     .build();
 
-            this.deleteButton = ButtonWidget.builder(Text.literal("Delete"), b -> {
+            this.deleteButton = ButtonWidget.builder(t("button.delete"), b -> {
                         NickConfig.remove(uuid);
                         refreshEntries();
                     })

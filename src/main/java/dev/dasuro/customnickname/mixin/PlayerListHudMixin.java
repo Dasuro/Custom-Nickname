@@ -2,8 +2,8 @@ package dev.dasuro.customnickname.mixin;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
-import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
+import dev.dasuro.customnickname.util.NickDisplayBuilder;
 import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.scoreboard.Team;
@@ -52,27 +52,9 @@ public class PlayerListHudMixin {
         // No server-set display name → Vanilla used Team.decorateName().
         // Build our own replacement using team color as base.
         Team team = entry.getScoreboardTeam();
-        Text baseName;
-        if (team != null) {
-            baseName = Team.decorateName(team, Text.literal(currentName != null ? currentName : ""));
-        } else {
-            baseName = Text.literal(currentName != null ? currentName : "");
-        }
+        Text baseName = NickDisplayBuilder.buildStyledBaseName(currentName, null, team);
         MutableText nickComponent = ColorParser.buildNick(nick, baseName);
 
-        MutableText full = Text.empty();
-
-        if (team != null && nick.showPrefix) full.append(team.getPrefix());
-        full.append(nickComponent);
-        if (team != null && nick.showSuffix) full.append(team.getSuffix());
-
-        if (StorageConfig.isShowIndicator()) {
-            full.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
-        }
-
-        cir.setReturnValue(full);
+        cir.setReturnValue(NickDisplayBuilder.buildDisplay(nick, team, nickComponent));
     }
 }
-
-
-
