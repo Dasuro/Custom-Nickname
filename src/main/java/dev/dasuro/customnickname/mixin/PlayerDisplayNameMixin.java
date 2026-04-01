@@ -2,7 +2,6 @@ package dev.dasuro.customnickname.mixin;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
-import dev.dasuro.customnickname.util.ColorParser;
 import dev.dasuro.customnickname.util.NickDisplayBuilder;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -36,8 +35,11 @@ public class PlayerDisplayNameMixin {
 
         MutableComponent originalResult = cir.getReturnValue() != null
                 ? cir.getReturnValue().copy() : null;
-        MutableComponent nickComponent = ColorParser.buildNick(nick,
-                NickDisplayBuilder.buildStyledBaseName(currentName, originalResult, null));
+        PlayerTeam team = self.getTeam();
+        MutableComponent result = NickDisplayBuilder.replaceInOriginalOrFallback(
+                originalResult, currentName, nick, team, false, true);
+
+        cir.setReturnValue(result);
     }
 
     @Inject(method = "getName", at = @At("RETURN"), cancellable = true)
@@ -51,11 +53,13 @@ public class PlayerDisplayNameMixin {
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        // Some nametag render paths use getName() directly; include configured team affixes here.
-        MutableComponent originalResult = cir.getReturnValue() != null ? cir.getReturnValue().copy() : null;
-        MutableComponent nickComponent = ColorParser.buildNick(nick,
-                NickDisplayBuilder.buildStyledBaseName(currentName, originalResult, null));
+        // Some nametag render paths use getName() directly
+        MutableComponent originalResult = cir.getReturnValue() != null
+                ? cir.getReturnValue().copy() : null;
+        PlayerTeam team = self.getTeam();
+        MutableComponent result = NickDisplayBuilder.replaceInOriginalOrFallback(
+                originalResult, currentName, nick, team, false, true);
 
-        cir.setReturnValue(nickComponent);
+        cir.setReturnValue(result);
     }
 }

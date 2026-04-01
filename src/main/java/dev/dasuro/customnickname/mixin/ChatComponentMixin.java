@@ -8,6 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.contents.PlainTextContents;
 import net.minecraft.network.chat.Style;
@@ -164,17 +165,12 @@ public class ChatComponentMixin {
 
                     if (a instanceof Component tArg) {
                         if (isChatMessage && i == 0) {
-                            // Player name argument: try exact matching first
+                            // Sender argument: strict replacement only (UUID/exact).
+                            // Do not run generic tree fallback here to avoid double remaps.
                             MutableComponent replacedArg = replacePlayerNameArgumentIfExact(tArg, effectiveStyle);
                             if (replacedArg != tArg) {
                                 newArgs[i] = replacedArg;
                                 changed = true;
-                            } else {
-                                MutableComponent deeper = replaceNamesInTree(tArg, effectiveStyle);
-                                if (deeper != tArg) {
-                                    newArgs[i] = deeper;
-                                    changed = true;
-                                }
                             }
                         } else {
                             // Message body or non-chat translatable: use tree walk
@@ -237,7 +233,27 @@ public class ChatComponentMixin {
     private MutableComponent replacePlayerNameArgumentIfExact(Component tArg, Style inheritedStyle) {
 
         String full = tArg.getString();
-        if (full.isBlank()) return asMutable(tArg);
+        if (full == null || full.isBlank()) return asMutable(tArg);
+
+        // Prefer UUID-based sender resolution when available (stable against display-name rewrites).
+        UUID senderUuid = extractEntityUuid(tArg);
+        if (senderUuid != null) {
+            NickEntry entry = NickConfig.get(senderUuid);
+            if (entry != null) {
+                Style effectiveStyle = resolveStyle(inheritedStyle, tArg.getStyle());
+                String cleaned = full.replace(StorageConfig.INDICATOR, "")
+                                     .replace(StorageConfig.INDICATOR.trim(), "")
+                                     .trim();
+                if (cleaned.isEmpty()) return asMutable(tArg);
+
+                Style nameStyle = parseSectionCodesForStyle(cleaned, effectiveStyle);
+                String nameText = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
+                MutableComponent base = Component.literal(nameText).setStyle(nameStyle);
+                return ColorParser.buildNick(entry, base);
+            }
+            // UUID found but no config entry: keep original argument untouched.
+            return asMutable(tArg);
+        }
 
         // Strip any indicator that other mixins may have appended (e.g. " ✎")
         String cleaned = full.replace(StorageConfig.INDICATOR, "")
@@ -278,13 +294,8 @@ public class ChatComponentMixin {
             }
         }
 
-        // Try 2: the argument contains team prefix/suffix + player name
-        // (e.g. "Owner | Dasuro") – use the same one-pass replacement
-        MutableComponent replaced = replaceConfiguredNamesOnePass(cleaned, effectiveStyle);
-        if (replaced != null) {
-            return replaced;
-        }
-
+        // For sender argument, avoid broad one-pass fallback to prevent
+        // accidental remaps when display names are already modified elsewhere.
         return asMutable(tArg);
     }
 
@@ -456,6 +467,23 @@ public class ChatComponentMixin {
         return map;
     }
 
+    @Unique
+    private UUID extractEntityUuid(Component text) {
+        HoverEvent hover = text.getStyle() != null ? text.getStyle().getHoverEvent() : null;
+        if (hover instanceof HoverEvent.ShowEntity showEntity && hover.action() == HoverEvent.Action.SHOW_ENTITY) {
+            HoverEvent.EntityTooltipInfo entity = showEntity.entity();
+            if (entity != null && entity.uuid != null) {
+                return entity.uuid;
+            }
+        }
+
+        for (Component sibling : text.getSiblings()) {
+            UUID found = extractEntityUuid(sibling);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
     /**
      * Returns true if the node's own Style has a ClickEvent or HoverEvent.
      * We must not restructure such nodes because that would destroy the
@@ -464,6 +492,7 @@ public class ChatComponentMixin {
     @Unique
     private boolean hasInteractiveStyle(Component text) {
         net.minecraft.network.chat.Style style = text.getStyle();
+        if (style == null) return false;
         return style.getClickEvent() != null || style.getHoverEvent() != null;
     }
 
