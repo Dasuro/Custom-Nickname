@@ -1,10 +1,10 @@
 package dev.dasuro.customnickname.util;
 
 import dev.dasuro.customnickname.config.NickEntry;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.TextColor;
 
 import java.util.regex.*;
 
@@ -27,8 +27,8 @@ public class ColorParser {
     /** Matches a trailing, incomplete hex color introducer that can happen while typing/pasting. */
     private static final Pattern TRAILING_INCOMPLETE_HEX = Pattern.compile("&#[0-9A-Fa-f]{0,5}$");
 
-    public static MutableText buildNick(NickEntry nick, Text serverOriginal) {
-        if (nick == null) return Text.empty();
+    public static MutableComponent buildNick(NickEntry nick, MutableComponent serverOriginal) {
+        if (nick == null) return Component.empty();
 
         String nickname = nick.nickname;
         if (nickname == null) nickname = "";
@@ -43,13 +43,13 @@ public class ColorParser {
         return applyOriginalStyle(nickname, serverOriginal);
     }
 
-    public static MutableText parse(String input) {
-        if (input == null || input.isEmpty()) return Text.empty();
+    public static MutableComponent parse(String input) {
+        if (input == null || input.isEmpty()) return Component.empty();
 
         // If someone is mid-typing or pasted a cut-off hex code, drop the incomplete tail.
         input = TRAILING_INCOMPLETE_HEX.matcher(input).replaceAll("");
 
-        MutableText result = Text.empty();
+        MutableComponent result = Component.empty();
         Matcher matcher = CODE_PATTERN.matcher(input);
         int lastEnd = 0;
         Style currentStyle = Style.EMPTY;
@@ -57,7 +57,7 @@ public class ColorParser {
         while (matcher.find()) {
             if (matcher.start() > lastEnd) {
                 result.append(
-                        Text.literal(
+                        Component.literal(
                                 input.substring(lastEnd, matcher.start())
                         ).setStyle(currentStyle)
                 );
@@ -78,7 +78,7 @@ public class ColorParser {
 
         if (lastEnd < input.length()) {
             result.append(
-                    Text.literal(input.substring(lastEnd))
+                    Component.literal(input.substring(lastEnd))
                             .setStyle(currentStyle)
             );
         }
@@ -162,7 +162,7 @@ public class ColorParser {
         return switch (code) {
             case 'l' -> style.withBold(true);
             case 'o' -> style.withItalic(true);
-            case 'n' -> style.withUnderline(true);
+            case 'n' -> style.withUnderlined(true);
             case 'm' -> style.withStrikethrough(true);
             case 'k' -> style.withObfuscated(true);
             default  -> style;
@@ -174,8 +174,8 @@ public class ColorParser {
      * Each character keeps its formatting (bold, italic, etc.) but gets
      * its color from the rainbow wave.
      */
-    private static MutableText rainbowWave(java.util.List<StyledChar> chars, long timeMs, float speed) {
-        MutableText result = Text.empty();
+    private static MutableComponent rainbowWave(java.util.List<StyledChar> chars, long timeMs, float speed) {
+        MutableComponent result = Component.empty();
         if (chars == null || chars.isEmpty()) return result;
 
         int len = chars.size();
@@ -193,18 +193,18 @@ public class ColorParser {
             // Start from the character's formatting style, then apply rainbow color
             Style style = sc.baseStyle().withColor(TextColor.fromRgb(rgb));
 
-            result.append(Text.literal(sc.character()).setStyle(style));
+            result.append(Component.literal(sc.character()).setStyle(style));
         }
 
         return result;
     }
 
-    public static MutableText applyOriginalStyle(
+    public static MutableComponent applyOriginalStyle(
             String newText,
-            Text original
+            MutableComponent original
     ) {
         Style style = extractFirstStyle(original);
-        return Text.literal(newText).setStyle(style);
+        return Component.literal(newText).setStyle(style);
     }
 
     public static boolean hasColorCodes(String input) {
@@ -229,15 +229,15 @@ public class ColorParser {
      * but keeps the original player color from the server. This is used when the
      * nickname contains only formatting codes and no explicit color codes.
      */
-    public static MutableText parseWithOriginalColor(String input, Text serverOriginal) {
-        if (input == null || input.isEmpty()) return Text.empty();
+    public static MutableComponent parseWithOriginalColor(String input, MutableComponent serverOriginal) {
+        if (input == null || input.isEmpty()) return Component.empty();
 
         Style originalStyle = extractFirstStyle(serverOriginal);
 
         // Remove trailing incomplete hex codes
         input = TRAILING_INCOMPLETE_HEX.matcher(input).replaceAll("");
 
-        MutableText result = Text.empty();
+        MutableComponent result = Component.empty();
         Matcher matcher = CODE_PATTERN.matcher(input);
         int lastEnd = 0;
         // Start with the original style (preserves color from the server)
@@ -246,7 +246,7 @@ public class ColorParser {
         while (matcher.find()) {
             if (matcher.start() > lastEnd) {
                 result.append(
-                        Text.literal(
+                        Component.literal(
                                 input.substring(lastEnd, matcher.start())
                         ).setStyle(currentStyle)
                 );
@@ -266,7 +266,7 @@ public class ColorParser {
 
         if (lastEnd < input.length()) {
             result.append(
-                    Text.literal(input.substring(lastEnd))
+                    Component.literal(input.substring(lastEnd))
                             .setStyle(currentStyle)
             );
         }
@@ -280,10 +280,10 @@ public class ColorParser {
         );
     }
 
-    private static Style extractFirstStyle(Text text) {
+    private static Style extractFirstStyle(Component text) {
         Style s = text.getStyle();
         if (s != null && s != Style.EMPTY) return s;
-        for (Text sibling : text.getSiblings()) {
+        for (Component sibling : text.getSiblings()) {
             Style found = extractFirstStyle(sibling);
             if (found != Style.EMPTY) return found;
         }
@@ -310,7 +310,7 @@ public class ColorParser {
             case 'f' -> style.withColor(TextColor.fromRgb(0xFFFFFF));
             case 'l' -> style.withBold(true);
             case 'o' -> style.withItalic(true);
-            case 'n' -> style.withUnderline(true);
+            case 'n' -> style.withUnderlined(true);
             case 'm' -> style.withStrikethrough(true);
             case 'k' -> style.withObfuscated(true);
             case 'r' -> Style.EMPTY;

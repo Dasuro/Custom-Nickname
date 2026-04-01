@@ -1,6 +1,6 @@
 package dev.dasuro.customnickname.util;
 
-import net.minecraft.text.Style;
+import net.minecraft.network.chat.Style;
 
 /**
  * Holds a piece of literal text together with its style.

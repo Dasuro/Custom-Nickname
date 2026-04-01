@@ -3,9 +3,10 @@ package dev.dasuro.customnickname.mixin;
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.util.NickDisplayBuilder;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.scoreboard.Team;
-import net.minecraft.text.Text;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.world.scores.PlayerTeam;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -19,12 +20,12 @@ import java.util.UUID;
  * This ensures our nickname replacement works even when a modded client
  * replaces the PlayerListHud rendering.
  */
-@Mixin(PlayerListEntry.class)
-public class PlayerListEntryMixin {
+@Mixin(PlayerInfo.class)
+public class PlayerInfoMixin {
 
-    @Inject(method = "getDisplayName", at = @At("RETURN"), cancellable = true)
-    private void customnickname$onGetDisplayName(CallbackInfoReturnable<Text> cir) {
-        PlayerListEntry self = (PlayerListEntry) (Object) this;
+    @Inject(method = "getTabListDisplayName", at = @At("RETURN"), cancellable = true)
+    private void customnickname$onGetDisplayName(CallbackInfoReturnable<Component> cir) {
+        PlayerInfo self = (PlayerInfo) (Object) this;
         if (self.getProfile() == null) return;
 
         UUID uuid = self.getProfile().id();
@@ -38,7 +39,8 @@ public class PlayerListEntryMixin {
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        Team team = self.getScoreboardTeam();
-        cir.setReturnValue(NickDisplayBuilder.replaceInOriginalOrFallback(cir.getReturnValue(), currentName, nick, team, true, true));
+        PlayerTeam team = self.getTeam();
+        MutableComponent original = cir.getReturnValue() != null ? cir.getReturnValue().copy() : null;
+        cir.setReturnValue(NickDisplayBuilder.replaceInOriginalOrFallback(original, currentName, nick, team, true, true));
     }
 }

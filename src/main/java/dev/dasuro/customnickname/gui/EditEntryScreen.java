@@ -4,17 +4,17 @@ import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.util.ColorParser;
 import dev.dasuro.customnickname.util.MojangLookup;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.input.CharInput;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.network.chat.Component;
 
 import java.util.UUID;
 import java.util.Locale;
@@ -25,17 +25,17 @@ public class EditEntryScreen extends Screen {
 
     private NickEntry entry;
 
-    private TextFieldWidget usernameField;
-    private TextFieldWidget nicknameField;
+    private EditBox usernameField;
+    private EditBox nicknameField;
 
-    private SliderWidget speedSlider;
+    private AbstractSliderButton speedSlider;
     private int previewY = -1;
     private ErrorModal errorModal;
 
     private static final String I18N_BASE = "gui.customnickname.edit.";
 
     public EditEntryScreen(Screen parent, UUID uuid) {
-        super(Text.translatable(I18N_BASE + "title"));
+        super(Component.translatable(I18N_BASE + "title"));
         this.parent = parent;
         this.uuid = uuid;
     }
@@ -43,11 +43,11 @@ public class EditEntryScreen extends Screen {
     @Override
     protected void init() {
         if (this.errorModal == null) {
-            this.errorModal = new ErrorModal(this.textRenderer);
+            this.errorModal = new ErrorModal(this.font);
         }
         this.errorModal.setScreenSize(this.width, this.height);
 
-        this.clearChildren();
+        this.clearWidgets();
 
         // Work on a copy so "Back" discards changes
         if (entry == null) {
@@ -70,8 +70,8 @@ public class EditEntryScreen extends Screen {
         int w = this.width - 40;
         int y = 40;
 
-        usernameField = new TextFieldWidget(
-                this.textRenderer,
+        usernameField = new EditBox(
+                this.font,
                 x,
                 y,
                 w,
@@ -80,11 +80,11 @@ public class EditEntryScreen extends Screen {
         );
         // Keep username length reasonable (matches typical MC constraints)
         usernameField.setMaxLength(16);
-        usernameField.setText(entry.username != null ? entry.username : "");
-        this.addDrawableChild(usernameField);
+        usernameField.setValue(entry.username != null ? entry.username : "");
+        this.addRenderableWidget(usernameField);
 
-        nicknameField = new TextFieldWidget(
-                this.textRenderer,
+        nicknameField = new EditBox(
+                this.font,
                 x,
                 y + 30,
                 w,
@@ -93,38 +93,38 @@ public class EditEntryScreen extends Screen {
         );
         // Allow long input (hex gradients can get very long)
         nicknameField.setMaxLength(4096);
-        nicknameField.setText(entry.nickname != null ? entry.nickname : "");
-        this.addDrawableChild(nicknameField);
+        nicknameField.setValue(entry.nickname != null ? entry.nickname : "");
+        this.addRenderableWidget(nicknameField);
 
         int btnY = y + 60;
         int btnW = (w - 10) / 2;
 
-        this.addDrawableChild(
-                ButtonWidget.builder(
+        this.addRenderableWidget(
+                Button.builder(
                                 toggleLabel("toggle.show_prefix", entry.showPrefix),
                                 b -> {
                                     entry.showPrefix = !entry.showPrefix;
                                     b.setMessage(toggleLabel("toggle.show_prefix", entry.showPrefix));
                                 }
                         )
-                        .dimensions(x, btnY, btnW, 20)
+                        .bounds(x, btnY, btnW, 20)
                         .build()
         );
 
-        this.addDrawableChild(
-                ButtonWidget.builder(
+        this.addRenderableWidget(
+                Button.builder(
                                 toggleLabel("toggle.show_suffix", entry.showSuffix),
                                 b -> {
                                     entry.showSuffix = !entry.showSuffix;
                                     b.setMessage(toggleLabel("toggle.show_suffix", entry.showSuffix));
                                 }
                         )
-                        .dimensions(x + btnW + 10, btnY, btnW, 20)
+                        .bounds(x + btnW + 10, btnY, btnW, 20)
                         .build()
         );
 
-        this.addDrawableChild(
-                ButtonWidget.builder(
+        this.addRenderableWidget(
+                Button.builder(
                                 toggleLabel("toggle.rainbow_wave", entry.rainbow),
                                 b -> {
                                     entry.rainbow = !entry.rainbow;
@@ -134,16 +134,16 @@ public class EditEntryScreen extends Screen {
                                     }
                                 }
                         )
-                        .dimensions(x, btnY + 30, btnW, 20)
+                        .bounds(x, btnY + 30, btnW, 20)
                         .build()
         );
 
-        speedSlider = new SliderWidget(
+        speedSlider = new AbstractSliderButton(
                 x + btnW + 10,
                 btnY + 30,
                 btnW,
                 20,
-                Text.empty(),
+                Component.empty(),
                 (entry.rainbowSpeed - 0.1f) / 4.9f
         ) {
             {
@@ -162,7 +162,7 @@ public class EditEntryScreen extends Screen {
         };
 
         speedSlider.active = entry.rainbow;
-        this.addDrawableChild(speedSlider);
+        this.addRenderableWidget(speedSlider);
 
         int btnW2 = 100;
         int gap2 = 10;
@@ -176,10 +176,10 @@ public class EditEntryScreen extends Screen {
         int rawPreviewY = btnY + 65;
         this.previewY = Math.min(rawPreviewY, yBottom2 - 30);
 
-        this.addDrawableChild(
-                ButtonWidget.builder(t("button.save"), b -> {
-                            String name = usernameField.getText().trim();
-                            String nick = nicknameField.getText();
+        this.addRenderableWidget(
+                Button.builder(t("button.save"), b -> {
+                            String name = usernameField.getValue().trim();
+                            String nick = nicknameField.getValue();
 
                             if (name.isBlank()) {
                                 showError("gui.customnickname.error.username_required");
@@ -203,7 +203,7 @@ public class EditEntryScreen extends Screen {
                                 // Username unchanged - just save under the same UUID
                                 entry.username = name;
                                 NickConfig.set(uuid, entry);
-                                MinecraftClient.getInstance().setScreen(parent);
+                                Minecraft.getInstance().setScreen(parent);
                                 return;
                             }
 
@@ -213,14 +213,14 @@ public class EditEntryScreen extends Screen {
                                 entry.username = findOnlineExactName(name);
                                 NickConfig.remove(uuid);
                                 NickConfig.set(onlineUuid, entry);
-                                MinecraftClient.getInstance().setScreen(parent);
+                                Minecraft.getInstance().setScreen(parent);
                                 return;
                             }
 
                             // Not online - try Mojang API (async)
                             MojangLookup.resolveByName(name).thenAccept(profile -> {
-                                MinecraftClient.getInstance().execute(() -> {
-                                    if (MinecraftClient.getInstance().currentScreen != this) {
+                                Minecraft.getInstance().execute(() -> {
+                                    if (Minecraft.getInstance().screen != this) {
                                         return;
                                     }
                                     if (profile == null) {
@@ -230,51 +230,51 @@ public class EditEntryScreen extends Screen {
                                     entry.username = profile.name();
                                     NickConfig.remove(uuid);
                                     NickConfig.set(profile.uuid(), entry);
-                                    MinecraftClient.getInstance().setScreen(parent);
+                                    Minecraft.getInstance().setScreen(parent);
                                 });
                             });
                         })
-                        .dimensions(startX2, yBottom2, btnW2, 20)
+                        .bounds(startX2, yBottom2, btnW2, 20)
                         .build()
         );
 
-        this.addDrawableChild(
-                ButtonWidget.builder(t("button.back"), b -> {
-                            MinecraftClient.getInstance().setScreen(parent);
+        this.addRenderableWidget(
+                Button.builder(t("button.back"), b -> {
+                            Minecraft.getInstance().setScreen(parent);
                         })
-                        .dimensions(startX2 + btnW2 + gap2, yBottom2, btnW2, 20)
+                        .bounds(startX2 + btnW2 + gap2, yBottom2, btnW2, 20)
                         .build()
         );
     }
 
     @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.renderBackground(context, mouseX, mouseY, delta);
-        // Dark translucent overlay so widgets are readable
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
         context.fill(0, 0, this.width, this.height, 0xC0101010);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         boolean modalOpen = errorModal != null && errorModal.isOpen();
         int uiMouseX = modalOpen ? -10000 : mouseX;
         int uiMouseY = modalOpen ? -10000 : mouseY;
 
-        super.render(context, uiMouseX, uiMouseY, delta);
+        super.extractRenderState(context, uiMouseX, uiMouseY, delta);
 
-        context.drawTextWithShadow(
-                this.textRenderer,
+        context.text(
+                this.font,
                 t("title"),
                 10,
                 10,
-                0xFFFFFF
+                0xFFFFFF,
+                true
         );
 
         // Preview with rainbow support
         if (previewY != -1) {
             NickEntry tmp = new NickEntry();
-            tmp.username = usernameField.getText();
-            tmp.nickname = nicknameField.getText();
+            tmp.username = usernameField.getValue();
+            tmp.nickname = nicknameField.getValue();
             tmp.showPrefix = entry.showPrefix;
             tmp.showSuffix = entry.showSuffix;
             tmp.rainbow = entry.rainbow;
@@ -286,28 +286,29 @@ public class EditEntryScreen extends Screen {
             // If no nickname is set or only formatting codes, show nothing in the preview
             String visibleNick = ColorParser.strip(rawNick);
             if (rawNick != null && !rawNick.isEmpty() && !visibleNick.isBlank()) {
-                Text nickText = ColorParser.buildNick(tmp, Text.literal(username));
+                Component nickText = ColorParser.buildNick(tmp, Component.literal(username));
 
                 int y = previewY;
                 int boxX = 20;
                 int boxY = y - 5;
                 int boxRight = this.width - 20;
-                int boxBottom = y + this.textRenderer.fontHeight + 5;
+                int boxBottom = y + this.font.lineHeight + 5;
 
                 // Border (drawn as outer rect)
                 context.fill(boxX, boxY, boxRight, boxBottom, 0xFF555555);
                 // Background (inset by 1px on each side)
                 context.fill(boxX + 1, boxY + 1, boxRight - 1, boxBottom - 1, 0xFF111111);
 
-                context.drawTextWithShadow(
-                        this.textRenderer,
+                context.text(
+                        this.font,
                         t("preview_label"),
                         boxX + 5,
                         y,
-                        0xFFAAAAAA
+                        0xFFAAAAAA,
+                        true
                 );
 
-                int labelW = this.textRenderer.getWidth(t("preview_label"));
+                int labelW = this.font.width(t("preview_label"));
                 int previewTextX = boxX + 5 + labelW;
 
                 int scissorRight = boxRight - 5;
@@ -317,12 +318,13 @@ public class EditEntryScreen extends Screen {
                     context.enableScissor(scissorLeft, boxY, scissorRight, boxBottom);
                 }
 
-                context.drawTextWithShadow(
-                        this.textRenderer,
+                context.text(
+                        this.font,
                         nickText,
                         previewTextX,
                         y,
-                        0xFFFFFFFF
+                        0xFFFFFFFF,
+                        true
                 );
 
                 if (scissorRight > scissorLeft) {
@@ -337,7 +339,7 @@ public class EditEntryScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubleClick) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
         if (errorModal != null && errorModal.isOpen()) {
             return errorModal.mouseClicked(click, doubleClick);
         }
@@ -345,7 +347,7 @@ public class EditEntryScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         if (errorModal != null && errorModal.isOpen()) {
             return errorModal.mouseReleased(click);
         }
@@ -353,7 +355,7 @@ public class EditEntryScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (errorModal != null && errorModal.isOpen()) {
             return errorModal.mouseDragged(click, deltaX, deltaY);
         }
@@ -369,7 +371,7 @@ public class EditEntryScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyInput keyInput) {
+    public boolean keyPressed(KeyEvent keyInput) {
         if (errorModal != null && errorModal.isOpen()) {
             return errorModal.keyPressed(keyInput);
         }
@@ -377,7 +379,7 @@ public class EditEntryScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(CharInput charInput) {
+    public boolean charTyped(CharacterEvent charInput) {
         if (errorModal != null && errorModal.isOpen()) {
             return errorModal.charTyped(charInput);
         }
@@ -385,16 +387,16 @@ public class EditEntryScreen extends Screen {
     }
 
     @Override
-    public void close() {
-        MinecraftClient.getInstance().setScreen(parent);
+    public void onClose() {
+        Minecraft.getInstance().setScreen(parent);
     }
 
-    private static Text t(String key, Object... args) {
-        return Text.translatable(I18N_BASE + key, args);
+    private static Component t(String key, Object... args) {
+        return Component.translatable(I18N_BASE + key, args);
     }
 
-    private static Text toggleLabel(String labelKey, boolean value) {
-        return Text.translatable(
+    private static Component toggleLabel(String labelKey, boolean value) {
+        return Component.translatable(
                 I18N_BASE + "toggle",
                 t(labelKey),
                 value ? t("state.on") : t("state.off")
@@ -403,17 +405,17 @@ public class EditEntryScreen extends Screen {
 
     private void showError(String translationKey, Object... args) {
         if (errorModal == null) {
-            errorModal = new ErrorModal(this.textRenderer);
+            errorModal = new ErrorModal(this.font);
             errorModal.setScreenSize(this.width, this.height);
         }
-        errorModal.show(Text.translatable(translationKey, args));
+        errorModal.show(Component.translatable(translationKey, args));
     }
 
     private UUID findOnlineUuid(String name) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.getNetworkHandler() == null) return null;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getConnection() == null) return null;
 
-        for (PlayerListEntry e : mc.getNetworkHandler().getPlayerList()) {
+        for (PlayerInfo e : mc.getConnection().getOnlinePlayers()) {
             String n = e.getProfile().name();
             if (n != null && n.equalsIgnoreCase(name)) return e.getProfile().id();
         }
@@ -421,10 +423,10 @@ public class EditEntryScreen extends Screen {
     }
 
     private String findOnlineExactName(String name) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.getNetworkHandler() == null) return name;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getConnection() == null) return name;
 
-        for (PlayerListEntry e : mc.getNetworkHandler().getPlayerList()) {
+        for (PlayerInfo e : mc.getConnection().getOnlinePlayers()) {
             String n = e.getProfile().name();
             if (n != null && n.equalsIgnoreCase(name)) return n;
         }

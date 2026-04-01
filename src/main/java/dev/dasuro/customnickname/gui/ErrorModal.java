@@ -1,13 +1,12 @@
 package dev.dasuro.customnickname.gui;
 
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.input.CharInput;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -20,11 +19,11 @@ public final class ErrorModal {
     private static final int TITLE_GAP = 8;
     private static final int FOOTER_GAP = 12;
 
-    private final TextRenderer textRenderer;
-    private final ButtonWidget closeButton;
+    private final Font textRenderer;
+    private final Button closeButton;
 
     private boolean open;
-    private Text message = Text.empty();
+    private Component message = Component.empty();
     private List<String> wrappedLines = List.of();
 
     private int screenWidth;
@@ -35,10 +34,10 @@ public final class ErrorModal {
     private int boxWidth;
     private int boxHeight;
 
-    public ErrorModal(TextRenderer textRenderer) {
+    public ErrorModal(Font textRenderer) {
         this.textRenderer = textRenderer;
-        this.closeButton = ButtonWidget.builder(Text.translatable("gui.customnickname.close"), b -> close())
-                .dimensions(0, 0, 80, 20)
+        this.closeButton = Button.builder(Component.translatable("gui.customnickname.close"), b -> close())
+                .bounds(0, 0, 80, 20)
                 .build();
     }
 
@@ -48,8 +47,8 @@ public final class ErrorModal {
         layout();
     }
 
-    public void show(Text message) {
-        this.message = message == null ? Text.empty() : message;
+    public void show(Component message) {
+        this.message = message == null ? Component.empty() : message;
         this.open = true;
         this.wrappedLines = wrapText(this.message.getString(), Math.max(120, getModalWidth() - BOX_PADDING * 2));
         layout();
@@ -63,7 +62,7 @@ public final class ErrorModal {
         return this.open;
     }
 
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         if (!open) return;
 
         context.fill(0, 0, screenWidth, screenHeight, 0xAA000000);
@@ -72,24 +71,24 @@ public final class ErrorModal {
         context.fill(boxX + 1, boxY + 1, boxX + boxWidth - 1, boxY + boxHeight - 1, 0xFF1A1A1A);
 
         int titleY = boxY + BOX_PADDING;
-        context.drawCenteredTextWithShadow(
+        context.centeredText(
                 textRenderer,
-                Text.translatable("gui.customnickname.error_title").formatted(Formatting.RED),
+                Component.translatable("gui.customnickname.error_title"),
                 boxX + boxWidth / 2,
                 titleY,
-                0xFFFFFFFF
+                0xFFFF5555
         );
 
-        int lineY = titleY + textRenderer.fontHeight + TITLE_GAP;
+        int lineY = titleY + textRenderer.lineHeight + TITLE_GAP;
         for (String line : wrappedLines) {
-            context.drawCenteredTextWithShadow(textRenderer, line, boxX + boxWidth / 2, lineY, 0xFFFFFFFF);
-            lineY += textRenderer.fontHeight + 2;
+            context.centeredText(textRenderer, line, boxX + boxWidth / 2, lineY, 0xFFFFFFFF);
+            lineY += textRenderer.lineHeight + 2;
         }
 
-        closeButton.render(context, mouseX, mouseY, delta);
+        closeButton.extractRenderState(context, mouseX, mouseY, delta);
     }
 
-    public boolean mouseClicked(Click click, boolean doubleClick) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
         if (!open) return false;
         if (isInside(click.x(), click.y())) {
             closeButton.mouseClicked(click, doubleClick);
@@ -97,13 +96,13 @@ public final class ErrorModal {
         return true;
     }
 
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         if (!open) return false;
         closeButton.mouseReleased(click);
         return true;
     }
 
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (!open) return false;
         closeButton.mouseDragged(click, deltaX, deltaY);
         return true;
@@ -114,7 +113,7 @@ public final class ErrorModal {
         return true;
     }
 
-    public boolean keyPressed(KeyInput keyInput) {
+    public boolean keyPressed(KeyEvent keyInput) {
         if (!open) return false;
         int keyCode = keyInput.key();
         if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
@@ -124,7 +123,7 @@ public final class ErrorModal {
         return true;
     }
 
-    public boolean charTyped(CharInput charInput) {
+    public boolean charTyped(CharacterEvent charInput) {
         return open;
     }
 
@@ -143,9 +142,9 @@ public final class ErrorModal {
     private void layout() {
         this.boxWidth = getModalWidth();
         this.boxHeight = BOX_PADDING
-                + textRenderer.fontHeight
+                + textRenderer.lineHeight
                 + TITLE_GAP
-                + Math.max(1, wrappedLines.size()) * (textRenderer.fontHeight + 2)
+                + Math.max(1, wrappedLines.size()) * (textRenderer.lineHeight + 2)
                 + FOOTER_GAP
                 + closeButton.getHeight()
                 + BOX_PADDING;
@@ -155,7 +154,8 @@ public final class ErrorModal {
 
         int closeX = boxX + (boxWidth - closeButton.getWidth()) / 2;
         int closeY = boxY + boxHeight - BOX_PADDING - closeButton.getHeight();
-        closeButton.setPosition(closeX, closeY);
+        closeButton.setX(closeX);
+        closeButton.setY(closeY);
     }
 
     private List<String> wrapText(String text, int maxLineWidth) {
@@ -188,7 +188,7 @@ public final class ErrorModal {
             }
 
             String candidate = current.isEmpty() ? word : current + " " + word;
-            if (textRenderer.getWidth(candidate) <= maxLineWidth) {
+            if (textRenderer.width(candidate) <= maxLineWidth) {
                 current.setLength(0);
                 current.append(candidate);
                 continue;
@@ -199,7 +199,7 @@ public final class ErrorModal {
                 current.setLength(0);
             }
 
-            if (textRenderer.getWidth(word) <= maxLineWidth) {
+            if (textRenderer.width(word) <= maxLineWidth) {
                 current.append(word);
             } else {
                 splitLongWord(lines, word, maxLineWidth);
@@ -215,7 +215,7 @@ public final class ErrorModal {
         StringBuilder part = new StringBuilder();
         for (int i = 0; i < word.length(); i++) {
             part.append(word.charAt(i));
-            if (textRenderer.getWidth(part.toString()) > maxLineWidth) {
+            if (textRenderer.width(part.toString()) > maxLineWidth) {
                 part.setLength(part.length() - 1);
                 if (!part.isEmpty()) {
                     lines.add(part.toString());

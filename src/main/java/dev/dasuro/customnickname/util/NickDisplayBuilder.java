@@ -2,12 +2,12 @@ package dev.dasuro.customnickname.util;
 
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.config.StorageConfig;
-import net.minecraft.scoreboard.Team;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.PlainTextContent;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableTextContent;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.contents.PlainTextContents;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,69 +18,69 @@ public final class NickDisplayBuilder {
     private NickDisplayBuilder() {
     }
 
-    public static Text buildStyledBaseName(String currentName, Text styleSource, Team team) {
+    public static MutableComponent buildStyledBaseName(String currentName, MutableComponent styleSource, PlayerTeam team) {
         String safeName = currentName != null ? currentName : "";
 
         Style sourceStyle = extractFirstStyle(styleSource);
         if (sourceStyle != Style.EMPTY) {
-            return Text.literal(safeName).setStyle(sourceStyle);
+            return Component.literal(safeName).setStyle(sourceStyle);
         }
 
-        if (team != null && team.getColor() != null && team.getColor().getColorValue() != null) {
-            return Text.literal(safeName).styled(s -> s.withColor(team.getColor().getColorValue()));
+        if (team != null && team.getColor() != null && team.getColor().getColor() != null) {
+            return Component.literal(safeName).withColor(team.getColor().getColor());
         }
 
-        return Text.literal(safeName);
+        return Component.literal(safeName);
     }
 
-    public static MutableText buildDisplay(NickEntry nick, Team team, MutableText nickComponent) {
-        MutableText full = Text.empty();
+    public static MutableComponent buildDisplay(NickEntry nick, PlayerTeam team, MutableComponent nickComponent) {
+        MutableComponent full = Component.empty();
 
         if (team != null && nick.showPrefix) {
-            full.append(team.getPrefix());
+            full.append(team.getPlayerPrefix());
         }
 
         full.append(nickComponent);
 
         if (team != null && nick.showSuffix) {
-            full.append(team.getSuffix());
+            full.append(team.getPlayerSuffix());
         }
 
         if (StorageConfig.isShowIndicator()) {
-            full.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+            full.append(Component.literal(StorageConfig.INDICATOR).withColor(0xFFFF00));
         }
 
         return full;
     }
 
-    public static Text replaceInOriginalOrFallback(Text original, String currentName, NickEntry nick, Team team) {
+    public static MutableComponent replaceInOriginalOrFallback(MutableComponent original, String currentName, NickEntry nick, PlayerTeam team) {
         return replaceInOriginalOrFallback(original, currentName, nick, team, false);
     }
 
-    public static Text replaceInOriginalOrFallback(
-            Text original,
+    public static MutableComponent replaceInOriginalOrFallback(
+            MutableComponent original,
             String currentName,
             NickEntry nick,
-            Team team,
+            PlayerTeam team,
             boolean keepOriginalWhenNameNotFound
     ) {
         return replaceInOriginalOrFallback(original, currentName, nick, team, keepOriginalWhenNameNotFound, false);
     }
 
-    public static Text replaceInOriginalOrFallback(
-            Text original,
+    public static MutableComponent replaceInOriginalOrFallback(
+            MutableComponent original,
             String currentName,
             NickEntry nick,
-            Team team,
+            PlayerTeam team,
             boolean keepOriginalWhenNameNotFound,
             boolean strictHideAffixesWhenDisabled
     ) {
         if (currentName == null || currentName.isBlank()) {
-            return buildDisplay(nick, team, ColorParser.buildNick(nick, Text.literal("")));
+            return buildDisplay(nick, team, ColorParser.buildNick(nick, Component.literal("")));
         }
 
         boolean allowMissingTeamAffixesFallback = !keepOriginalWhenNameNotFound;
-        Text replaced = replaceInsideOriginal(
+        MutableComponent replaced = replaceInsideOriginal(
                 original,
                 currentName,
                 nick,
@@ -94,24 +94,24 @@ public final class NickDisplayBuilder {
 
         if (keepOriginalWhenNameNotFound && original != null) {
             if (strictHideAffixesWhenDisabled && (!nick.showPrefix || !nick.showSuffix)) {
-                Text baseName = buildStyledBaseName(currentName, original, team);
-                MutableText nickComponent = ColorParser.buildNick(nick, baseName);
+                MutableComponent baseName = buildStyledBaseName(currentName, original, team);
+                MutableComponent nickComponent = ColorParser.buildNick(nick, baseName);
                 return buildDisplay(nick, team, nickComponent);
             }
             return original;
         }
 
-        Text baseName = buildStyledBaseName(currentName, original, team);
-        MutableText nickComponent = ColorParser.buildNick(nick, baseName);
+        MutableComponent baseName = buildStyledBaseName(currentName, original, team);
+        MutableComponent nickComponent = ColorParser.buildNick(nick, baseName);
 
         return buildDisplay(nick, team, nickComponent);
     }
 
-    private static Text replaceInsideOriginal(
-            Text original,
+    private static MutableComponent replaceInsideOriginal(
+            MutableComponent original,
             String currentName,
             NickEntry nick,
-            Team team,
+            PlayerTeam team,
             boolean allowMissingTeamAffixesFallback,
             boolean strictHideAffixesWhenDisabled
     ) {
@@ -131,25 +131,25 @@ public final class NickDisplayBuilder {
         int end = start + currentName.length();
 
         Style nameStyle = getStyleAtPosition(segments, start);
-        Text baseName;
+        MutableComponent baseName;
         if (nameStyle != null && nameStyle != Style.EMPTY) {
-            baseName = Text.literal(currentName).setStyle(nameStyle);
+            baseName = Component.literal(currentName).setStyle(nameStyle);
         } else {
             baseName = buildStyledBaseName(currentName, null, team);
         }
 
         String beforeName = raw.substring(0, start);
         String afterName = raw.substring(end);
-        String teamPrefix = team != null ? team.getPrefix().getString() : "";
-        String teamSuffix = team != null ? team.getSuffix().getString() : "";
+        String teamPrefix = team != null ? team.getPlayerPrefix().getString() : "";
+        String teamSuffix = team != null ? team.getPlayerSuffix().getString() : "";
 
-        MutableText result = Text.empty();
+        MutableComponent result = Component.empty();
 
         if (nick.showPrefix) {
             if (!beforeName.isEmpty()) {
                 result.append(reconstructRange(segments, 0, start));
             } else if (allowMissingTeamAffixesFallback && team != null && !teamPrefix.isEmpty()) {
-                result.append(team.getPrefix());
+                result.append(team.getPlayerPrefix());
             }
         } else if (!beforeName.isEmpty() && !strictHideAffixesWhenDisabled) {
             String nonPrefix = removeLeadingTeamPart(beforeName, teamPrefix);
@@ -167,7 +167,7 @@ public final class NickDisplayBuilder {
             if (!afterName.isEmpty()) {
                 result.append(reconstructRange(segments, end, raw.length()));
             } else if (allowMissingTeamAffixesFallback && team != null && !teamSuffix.isEmpty()) {
-                result.append(team.getSuffix());
+                result.append(team.getPlayerSuffix());
             }
         } else if (!afterName.isEmpty() && !strictHideAffixesWhenDisabled) {
             String nonSuffix = removeLeadingTeamPart(afterName, teamSuffix);
@@ -180,7 +180,7 @@ public final class NickDisplayBuilder {
         }
 
         if (StorageConfig.isShowIndicator()) {
-            result.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+            result.append(Component.literal(StorageConfig.INDICATOR).withColor(0xFFFF00));
         }
 
         return result;
@@ -261,32 +261,32 @@ public final class NickDisplayBuilder {
                 || c == '_';
     }
 
-    private static void flattenText(Text text, List<StyledSegment> out) {
-        if (text.getContent() instanceof PlainTextContent plain) {
-            String literal = plain.string();
+    private static void flattenText(Component text, List<StyledSegment> out) {
+        if (text.getContents() instanceof PlainTextContents plain) {
+            String literal = plain.text();
             if (!literal.isEmpty()) out.add(new StyledSegment(literal, text.getStyle()));
-        } else if (text.getContent() instanceof TranslatableTextContent tc) {
+        } else if (text.getContents() instanceof TranslatableContents tc) {
             for (Object arg : tc.getArgs()) {
-                if (arg instanceof Text argText) {
+                if (arg instanceof Component argText) {
                     flattenText(argText, out);
                 } else if (arg instanceof String argStr && !argStr.isEmpty()) {
                     out.add(new StyledSegment(argStr, text.getStyle()));
                 }
             }
         } else {
-            String fallback = text.copyContentOnly().getString();
+            String fallback = text.plainCopy().getString();
             if (fallback != null && !fallback.isEmpty()) {
                 out.add(new StyledSegment(fallback, text.getStyle()));
             }
         }
 
-        for (Text sibling : text.getSiblings()) {
+        for (Component sibling : text.getSiblings()) {
             flattenText(sibling, out);
         }
     }
 
-    private static MutableText reconstructRange(List<StyledSegment> segments, int start, int end) {
-        MutableText result = Text.empty();
+    private static MutableComponent reconstructRange(List<StyledSegment> segments, int start, int end) {
+        MutableComponent result = Component.empty();
         int pos = 0;
         for (StyledSegment seg : segments) {
             int segStart = pos;
@@ -299,7 +299,7 @@ public final class NickDisplayBuilder {
             int from = Math.max(start - segStart, 0);
             int to = Math.min(end - segStart, seg.text.length());
             if (from < to) {
-                result.append(Text.literal(seg.text.substring(from, to)).setStyle(seg.style));
+                result.append(Component.literal(seg.text.substring(from, to)).setStyle(seg.style));
             }
         }
         return result;
@@ -315,7 +315,7 @@ public final class NickDisplayBuilder {
         return null;
     }
 
-    private static Style extractFirstStyle(Text text) {
+    private static Style extractFirstStyle(Component text) {
         if (text == null) return Style.EMPTY;
 
         Style s = text.getStyle();
@@ -323,7 +323,7 @@ public final class NickDisplayBuilder {
             return s;
         }
 
-        for (Text sibling : text.getSiblings()) {
+        for (Component sibling : text.getSiblings()) {
             Style nested = extractFirstStyle(sibling);
             if (nested != Style.EMPTY) {
                 return nested;

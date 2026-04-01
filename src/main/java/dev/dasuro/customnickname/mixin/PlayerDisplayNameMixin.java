@@ -4,10 +4,10 @@ import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.util.ColorParser;
 import dev.dasuro.customnickname.util.NickDisplayBuilder;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.scoreboard.Team;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.scores.PlayerTeam;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -20,13 +20,13 @@ import java.util.UUID;
  * ANY code path (including Entity Culling's separate nametag rendering for
  * culled entities) receives the custom nickname instead of the vanilla name.
  */
-@Mixin(PlayerEntity.class)
-public class PlayerEntityDisplayNameMixin {
+@Mixin(Player.class)
+public class PlayerDisplayNameMixin {
 
     @Inject(method = "getDisplayName", at = @At("RETURN"), cancellable = true)
-    private void customnickname$onGetDisplayName(CallbackInfoReturnable<Text> cir) {
-        PlayerEntity self = (PlayerEntity) (Object) this;
-        UUID uuid = self.getUuid();
+    private void customnickname$onGetDisplayName(CallbackInfoReturnable<Component> cir) {
+        Player self = (Player) (Object) this;
+        UUID uuid = self.getUUID();
         String currentName = self.getGameProfile().name();
 
         NickConfig.updateUsernameIfChanged(uuid, currentName);
@@ -34,15 +34,16 @@ public class PlayerEntityDisplayNameMixin {
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        Text originalResult = cir.getReturnValue();
-        Team team = self.getScoreboardTeam();
-        cir.setReturnValue(NickDisplayBuilder.replaceInOriginalOrFallback(originalResult, currentName, nick, team));
+        MutableComponent originalResult = cir.getReturnValue() != null
+                ? cir.getReturnValue().copy() : null;
+        MutableComponent nickComponent = ColorParser.buildNick(nick,
+                NickDisplayBuilder.buildStyledBaseName(currentName, originalResult, null));
     }
 
     @Inject(method = "getName", at = @At("RETURN"), cancellable = true)
-    private void customnickname$onGetName(CallbackInfoReturnable<Text> cir) {
-        PlayerEntity self = (PlayerEntity) (Object) this;
-        UUID uuid = self.getUuid();
+    private void customnickname$onGetName(CallbackInfoReturnable<Component> cir) {
+        Player self = (Player) (Object) this;
+        UUID uuid = self.getUUID();
         String currentName = self.getGameProfile().name();
 
         NickConfig.updateUsernameIfChanged(uuid, currentName);
@@ -51,11 +52,10 @@ public class PlayerEntityDisplayNameMixin {
         if (nick == null) return;
 
         // Some nametag render paths use getName() directly; include configured team affixes here.
-        Text originalResult = cir.getReturnValue();
-        Team team = self.getScoreboardTeam();
-        Text baseName = NickDisplayBuilder.buildStyledBaseName(currentName, originalResult, team);
-        MutableText nickComponent = ColorParser.buildNick(nick, baseName);
+        MutableComponent originalResult = cir.getReturnValue() != null ? cir.getReturnValue().copy() : null;
+        MutableComponent nickComponent = ColorParser.buildNick(nick,
+                NickDisplayBuilder.buildStyledBaseName(currentName, originalResult, null));
 
-        cir.setReturnValue(NickDisplayBuilder.buildDisplay(nick, team, nickComponent));
+        cir.setReturnValue(nickComponent);
     }
 }

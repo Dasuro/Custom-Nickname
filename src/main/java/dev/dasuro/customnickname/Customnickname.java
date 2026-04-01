@@ -7,14 +7,14 @@ import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.gui.CustomNickConfigScreen;
 import dev.dasuro.customnickname.util.MojangLookup;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.text.Text;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -27,7 +27,7 @@ public class Customnickname implements ClientModInitializer {
     public static final String MOD_ID = "customnick";
 
     // Keybind: N opens the Custom Nickname menu (can be rebound in Controls)
-    private static KeyBinding OPEN_MENU_KEY;
+    private static KeyMapping OPEN_MENU_KEY;
 
     @Override
     public void onInitializeClient() {
@@ -38,18 +38,18 @@ public class Customnickname implements ClientModInitializer {
         refreshAllKnownUsernamesAsync();
 
         // Register keybind
-        OPEN_MENU_KEY = KeyBindingHelper.registerKeyBinding(
-                new KeyBinding(
+        OPEN_MENU_KEY = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping(
                         "key.customnickname.open_menu",
                         GLFW.GLFW_KEY_N,
-                        KeyBinding.Category.MISC
+                        KeyMapping.Category.MISC
                 )
         );
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (OPEN_MENU_KEY == null) return;
 
-            while (OPEN_MENU_KEY.wasPressed()) {
+            while (OPEN_MENU_KEY.consumeClick()) {
                 openConfigScreen(client);
             }
         });
@@ -58,16 +58,16 @@ public class Customnickname implements ClientModInitializer {
         ClientCommandRegistrationCallback.EVENT.register(
                 (dispatcher, registryAccess) ->
                         dispatcher.register(
-                                ClientCommandManager.literal("cnick")
+                                ClientCommands.literal("cnick")
                                         .then(
-                                                ClientCommandManager.literal("add")
+                                                ClientCommands.literal("add")
                                                         .then(
-                                                                ClientCommandManager.argument(
+                                                                ClientCommands.argument(
                                                                                 "player",
                                                                                 StringArgumentType.word()
                                                                         )
                                                                         .then(
-                                                                                ClientCommandManager.argument(
+                                                                                ClientCommands.argument(
                                                                                                 "nick",
                                                                                                 StringArgumentType.greedyString()
                                                                                         )
@@ -111,7 +111,7 @@ public class Customnickname implements ClientModInitializer {
 
                                                                                                 ctx.getSource()
                                                                                                         .sendFeedback(
-                                                                                                                Text.literal(
+                                                                                                                Component.literal(
                                                                                                                         "Custom Nickname: set nickname for " +
                                                                                                                                 entry.username +
                                                                                                                                 "."
@@ -122,7 +122,7 @@ public class Customnickname implements ClientModInitializer {
 
                                                                                             // 2) Otherwise resolve UUID via Mojang services
                                                                                             ctx.getSource().sendFeedback(
-                                                                                                    Text.literal(
+                                                                                                    Component.literal(
                                                                                                             "Custom Nickname: looking up UUID for " +
                                                                                                                     playerName +
                                                                                                                     "..."
@@ -133,7 +133,7 @@ public class Customnickname implements ClientModInitializer {
                                                                                                             playerName
                                                                                                     )
                                                                                                     .thenAccept(profile -> {
-                                                                                                        MinecraftClient
+                                                                                                        Minecraft
                                                                                                                 .getInstance()
                                                                                                                 .execute(() -> {
                                                                                                                     if (profile ==
@@ -181,9 +181,9 @@ public class Customnickname implements ClientModInitializer {
                                                         )
                                         )
                                         .then(
-                                                ClientCommandManager.literal("remove")
+                                                ClientCommands.literal("remove")
                                                         .then(
-                                                                ClientCommandManager.argument(
+                                                                ClientCommands.argument(
                                                                                 "player",
                                                                                 StringArgumentType.word()
                                                                         )
@@ -200,7 +200,7 @@ public class Customnickname implements ClientModInitializer {
                                                                             if (onlineUuid != null) {
                                                                                 NickConfig.remove(onlineUuid);
                                                                                 ctx.getSource().sendFeedback(
-                                                                                        Text.literal(
+                                                                                        Component.literal(
                                                                                                 "Custom Nickname: removed entry for " +
                                                                                                         findOnlineExactName(
                                                                                                                 playerName
@@ -213,7 +213,7 @@ public class Customnickname implements ClientModInitializer {
 
                                                                             // Otherwise try Mojang lookup
                                                                             ctx.getSource().sendFeedback(
-                                                                                    Text.literal(
+                                                                                    Component.literal(
                                                                                             "Custom Nickname: looking up UUID for " +
                                                                                                     playerName +
                                                                                                     "..."
@@ -224,7 +224,7 @@ public class Customnickname implements ClientModInitializer {
                                                                                             playerName
                                                                                     )
                                                                                     .thenAccept(profile -> {
-                                                                                        MinecraftClient.getInstance()
+                                                                                        Minecraft.getInstance()
                                                                                                 .execute(() -> {
                                                                                                     if (profile ==
                                                                                                             null) {
@@ -252,13 +252,13 @@ public class Customnickname implements ClientModInitializer {
                                                         )
                                         )
                                         .then(
-                                                ClientCommandManager.literal("list")
+                                                ClientCommands.literal("list")
                                                         .executes(ctx -> {
                                                             Map<String, NickEntry> all =
                                                                     NickConfig.getAll();
                                                             if (all.isEmpty()) {
                                                                 ctx.getSource().sendFeedback(
-                                                                        Text.literal(
+                                                                        Component.literal(
                                                                                 "Custom Nickname: no entries."
                                                                         )
                                                                 );
@@ -266,7 +266,7 @@ public class Customnickname implements ClientModInitializer {
                                                             }
 
                                                             ctx.getSource().sendFeedback(
-                                                                    Text.literal("Custom Nickname entries:")
+                                                                    Component.literal("Custom Nickname entries:")
                                                             );
 
                                                             for (Map.Entry<String, NickEntry> e :
@@ -283,7 +283,7 @@ public class Customnickname implements ClientModInitializer {
                                                                                 : "";
 
                                                                 ctx.getSource().sendFeedback(
-                                                                        Text.literal(
+                                                                        Component.literal(
                                                                                 " - " +
                                                                                         name +
                                                                                         " (" +
@@ -300,21 +300,21 @@ public class Customnickname implements ClientModInitializer {
         );
     }
 
-    private static void openConfigScreen(MinecraftClient client) {
+    private static void openConfigScreen(Minecraft client) {
         if (client == null) return;
         if (client.getWindow() == null) return;
 
         // Don't open a new instance if it's already open
-        if (client.currentScreen instanceof CustomNickConfigScreen) return;
+        if (client.screen instanceof CustomNickConfigScreen) return;
 
-        client.setScreen(new CustomNickConfigScreen(client.currentScreen));
+        client.setScreen(new CustomNickConfigScreen(client.screen));
     }
 
     private static UUID findOnlineUuid(String name) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.getNetworkHandler() == null) return null;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getConnection() == null) return null;
 
-        for (PlayerListEntry e : mc.getNetworkHandler().getPlayerList()) {
+        for (PlayerInfo e : mc.getConnection().getOnlinePlayers()) {
             String n = e.getProfile().name();
             if (n != null && n.equalsIgnoreCase(name)) {
                 return e.getProfile().id();
@@ -324,10 +324,10 @@ public class Customnickname implements ClientModInitializer {
     }
 
     private static String findOnlineExactName(String name) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.getNetworkHandler() == null) return name;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getConnection() == null) return name;
 
-        for (PlayerListEntry e : mc.getNetworkHandler().getPlayerList()) {
+        for (PlayerInfo e : mc.getConnection().getOnlinePlayers()) {
             String n = e.getProfile().name();
             if (n != null && n.equalsIgnoreCase(name)) {
                 return n;
@@ -365,9 +365,9 @@ public class Customnickname implements ClientModInitializer {
     }
 
     private static void sendClientChat(String msg) {
-        MinecraftClient mc = MinecraftClient.getInstance();
+        Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
-        mc.player.sendMessage(Text.literal(msg), false);
+        mc.player.sendSystemMessage(Component.literal(msg));
     }
 }

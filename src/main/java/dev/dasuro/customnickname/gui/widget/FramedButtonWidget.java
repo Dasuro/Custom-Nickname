@@ -1,9 +1,9 @@
 package dev.dasuro.customnickname.gui.widget;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Component;
 
 /**
  * Draw helper for top navigation tabs.
@@ -24,7 +24,7 @@ public final class FramedButtonWidget {
     private FramedButtonWidget() {
     }
 
-    public static void renderTab(DrawContext context, ButtonWidget button, Text label, int mouseX, int mouseY, boolean activeTab) {
+    public static void renderTab(GuiGraphicsExtractor context, Button button, Component label, int mouseX, int mouseY, boolean activeTab) {
         int x = button.getX();
         int y = button.getY();
         int w = button.getWidth();
@@ -57,12 +57,9 @@ public final class FramedButtonWidget {
             context.fill(x + 1, y + 1, x + w - 1, y + 2, 0x44FFFFFF);
         }
 
-        var textRenderer = MinecraftClient.getInstance().textRenderer;
-        if (textRenderer == null) {
-            return;
-        }
+        var textRenderer = Minecraft.getInstance().font;
 
-        context.drawCenteredTextWithShadow(
+        context.centeredText(
                 textRenderer,
                 label,
                 x + w / 2,

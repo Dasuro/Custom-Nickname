@@ -4,15 +4,15 @@ import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.hud.ChatHud;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.PlainTextContent;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
-import net.minecraft.text.TranslatableTextContent;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.ChatComponent;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.contents.PlainTextContents;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -22,28 +22,28 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Mixin(ChatHud.class)
-public class ChatHudMixin {
+@Mixin(ChatComponent.class)
+public class ChatComponentMixin {
 
     @Unique
     private static final String MC_NAME_CHARS = "[A-Za-z0-9_]";
 
 
     @ModifyVariable(
-            method = "addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
+            method = "addPlayerMessage(Lnet/minecraft/network/chat/Component;Lnet/minecraft/network/chat/MessageSignature;Lnet/minecraft/client/multiplayer/chat/GuiMessageTag;)V",
             at = @At("HEAD"),
             argsOnly = true
     )
-    private Text customnickname$onAddMessage(Text original) {
-        Text result = replaceNamesInTree(original);
+    private Component customnickname$onAddMessage(Component original) {
+        MutableComponent result = replaceNamesInTree(original);
 
 
         // If indicator is enabled and something was actually replaced, append ✎ once at the end
         if (StorageConfig.isShowIndicator() && result != original) {
             // Strip any indicator characters that leaked in from other mixins
             // (e.g. PlayerListEntryMixin adding ✎ to display names used as chat arguments)
-            MutableText cleaned = stripIndicator(result);
-            cleaned.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+            MutableComponent cleaned = stripIndicator(result);
+            cleaned.append(Component.literal(StorageConfig.INDICATOR).withColor(0xFFFF00));
             return cleaned;
         }
 
@@ -55,19 +55,19 @@ public class ChatHudMixin {
      * so we can append exactly one at the very end.
      */
     @Unique
-    private MutableText stripIndicator(Text text) {
+    private MutableComponent stripIndicator(Component text) {
         String indicator = StorageConfig.INDICATOR;
 
-        MutableText result;
-        if (text.getContent() instanceof PlainTextContent.Literal lc) {
-            String raw = lc.string();
+        MutableComponent result;
+        if (text.getContents() instanceof PlainTextContents plain) {
+            String raw = plain.text();
             String stripped = raw.replace(indicator, "").replace(indicator.trim(), "");
-            result = Text.literal(stripped).setStyle(text.getStyle());
+            result = Component.literal(stripped).setStyle(text.getStyle());
         } else {
-            result = text.copyContentOnly().setStyle(text.getStyle());
+            result = text.plainCopy().setStyle(text.getStyle());
         }
 
-        for (Text sibling : text.getSiblings()) {
+        for (Component sibling : text.getSiblings()) {
             // Skip siblings that are exactly the indicator
             String sibStr = sibling.getString();
             if (sibStr.equals(indicator) || sibStr.equals(indicator.trim())) {
@@ -80,13 +80,13 @@ public class ChatHudMixin {
     }
 
     @Unique
-    private Text replaceNamesInTree(Text text) {
+    private MutableComponent replaceNamesInTree(Component text) {
         return replaceNamesInTree(text, Style.EMPTY);
     }
 
 
     @Unique
-    private Text replaceNamesInTree(Text text, Style inheritedStyle) {
+    private MutableComponent replaceNamesInTree(Component text, Style inheritedStyle) {
         // Resolve the effective style for this node: the node's own style
         // layered on top of what it inherits from its parent.  When we rebuild
         // fragments we must use this so that "inherited gray" is not lost and
@@ -98,9 +98,9 @@ public class ChatHudMixin {
         // result so that links / tooltips / run-command actions are not lost.
         boolean interactive = hasInteractiveStyle(text);
 
-        if (text.getContent() instanceof PlainTextContent.Literal lc) {
-            String raw = lc.string();
-            MutableText replaced = replaceConfiguredNamesOnePass(raw, effectiveStyle);
+        if (text.getContents() instanceof PlainTextContents plain) {
+            String raw = plain.text();
+            MutableComponent replaced = replaceConfiguredNamesOnePass(raw, effectiveStyle);
             if (replaced == null) {
                 // No name found in this node's own text.
                 // For interactive nodes we still must process siblings –
@@ -134,18 +134,18 @@ public class ChatHudMixin {
                                                    .withHoverEvent(src.getHoverEvent());
                     }
                 }
-                MutableText wrapper = Text.empty().setStyle(wrapperStyle);
+                MutableComponent wrapper = Component.empty().setStyle(wrapperStyle);
                 wrapper.append(replaced);
                 replaced = wrapper;
             }
 
-            for (Text sibling : text.getSiblings()) {
+            for (Component sibling : text.getSiblings()) {
                 replaced.append(replaceNamesInTree(sibling, effectiveStyle));
             }
             return replaced;
         }
 
-        if (text.getContent() instanceof TranslatableTextContent tc) {
+        if (text.getContents() instanceof TranslatableContents tc) {
 
             Object[] args = tc.getArgs();
             if (args != null && args.length > 0) {
@@ -162,15 +162,15 @@ public class ChatHudMixin {
                 for (int i = 0; i < newArgs.length; i++) {
                     Object a = newArgs[i];
 
-                    if (a instanceof Text tArg) {
+                    if (a instanceof Component tArg) {
                         if (isChatMessage && i == 0) {
                             // Player name argument: try exact matching first
-                            Text replacedArg = replacePlayerNameArgumentIfExact(tArg, effectiveStyle);
+                            MutableComponent replacedArg = replacePlayerNameArgumentIfExact(tArg, effectiveStyle);
                             if (replacedArg != tArg) {
                                 newArgs[i] = replacedArg;
                                 changed = true;
                             } else {
-                                Text deeper = replaceNamesInTree(tArg, effectiveStyle);
+                                MutableComponent deeper = replaceNamesInTree(tArg, effectiveStyle);
                                 if (deeper != tArg) {
                                     newArgs[i] = deeper;
                                     changed = true;
@@ -179,7 +179,7 @@ public class ChatHudMixin {
                         } else {
                             // Message body or non-chat translatable: use tree walk
                             // so every occurrence of a configured name is replaced.
-                            Text deeper = replaceNamesInTree(tArg, effectiveStyle);
+                            MutableComponent deeper = replaceNamesInTree(tArg, effectiveStyle);
                             if (deeper != tArg) {
                                 newArgs[i] = deeper;
                                 changed = true;
@@ -187,15 +187,15 @@ public class ChatHudMixin {
                         }
                     } else if (a instanceof String sArg) {
                         if (isChatMessage && i == 0) {
-                            Text asText = Text.literal(sArg);
-                            Text replacedArg = replacePlayerNameArgumentIfExact(asText, effectiveStyle);
+                            MutableComponent asText = Component.literal(sArg);
+                            MutableComponent replacedArg = replacePlayerNameArgumentIfExact(asText, effectiveStyle);
                             if (replacedArg != asText) {
                                 newArgs[i] = replacedArg;
                                 changed = true;
                             }
                         } else {
                             // Message body as plain string: run one-pass replacement
-                            MutableText replaced = replaceConfiguredNamesOnePass(sArg, effectiveStyle);
+                            MutableComponent replaced = replaceConfiguredNamesOnePass(sArg, effectiveStyle);
                             if (replaced != null) {
                                 newArgs[i] = replaced;
                                 changed = true;
@@ -205,8 +205,8 @@ public class ChatHudMixin {
                 }
 
                 if (changed) {
-                    MutableText rebuilt = Text.translatable(tc.getKey(), newArgs).setStyle(text.getStyle());
-                    for (Text sibling : text.getSiblings()) {
+                    MutableComponent rebuilt = Component.translatable(tc.getKey(), newArgs).setStyle(text.getStyle());
+                    for (Component sibling : text.getSiblings()) {
                         rebuilt.append(replaceNamesInTree(sibling, effectiveStyle));
                     }
                     return rebuilt;
@@ -230,21 +230,20 @@ public class ChatHudMixin {
     private Style resolveStyle(Style parent, Style child) {
         if (child == null || child.equals(Style.EMPTY)) return parent;
         if (parent == null || parent.equals(Style.EMPTY)) return child;
-        // child.withParent(parent) = "take child, fill gaps from parent"
-        return child.withParent(parent);
+        return child.applyTo(parent);
     }
 
     @Unique
-    private Text replacePlayerNameArgumentIfExact(Text tArg, Style inheritedStyle) {
+    private MutableComponent replacePlayerNameArgumentIfExact(Component tArg, Style inheritedStyle) {
 
         String full = tArg.getString();
-        if (full == null || full.isBlank()) return tArg;
+        if (full.isBlank()) return asMutable(tArg);
 
         // Strip any indicator that other mixins may have appended (e.g. " ✎")
         String cleaned = full.replace(StorageConfig.INDICATOR, "")
                              .replace(StorageConfig.INDICATOR.trim(), "")
                              .trim();
-        if (cleaned.isEmpty()) return tArg;
+        if (cleaned.isEmpty()) return asMutable(tArg);
 
         // Also strip §-formatting codes so names are recognised even when the
         // server sends "§aUsername§7: text" style messages.
@@ -258,7 +257,7 @@ public class ChatHudMixin {
         // use recursive tree replacement so each sibling keeps its own style.
         // This avoids flattening the text and losing per-sibling colors.
         if (!tArg.getSiblings().isEmpty()) {
-            Text treeResult = replaceNamesInTree(tArg, inheritedStyle);
+            MutableComponent treeResult = replaceNamesInTree(tArg, inheritedStyle);
             if (treeResult != tArg) {
                 return treeResult;
             }
@@ -272,7 +271,7 @@ public class ChatHudMixin {
                 // Parse any §-codes in 'cleaned' to determine the style that
                 // should apply to the name.  E.g. "§7PlayerName" → style = gray.
                 Style nameStyle = parseSectionCodesForStyle(cleaned, effectiveStyle);
-                Text base = Text.literal(candidate).setStyle(nameStyle);
+                MutableComponent base = Component.literal(candidate).setStyle(nameStyle);
                 // Don't apply team color as fallback – the server's intended
                 // styling (e.g. gray names) should be respected.
                 return ColorParser.buildNick(byOnline, base);
@@ -281,21 +280,26 @@ public class ChatHudMixin {
 
         // Try 2: the argument contains team prefix/suffix + player name
         // (e.g. "Owner | Dasuro") – use the same one-pass replacement
-        MutableText replaced = replaceConfiguredNamesOnePass(cleaned, effectiveStyle);
+        MutableComponent replaced = replaceConfiguredNamesOnePass(cleaned, effectiveStyle);
         if (replaced != null) {
             return replaced;
         }
 
-        return tArg;
+        return asMutable(tArg);
+    }
+
+    @Unique
+    private MutableComponent asMutable(Component component) {
+        return component instanceof MutableComponent mutable ? mutable : component.copy();
     }
 
 
     @Unique
     private NickEntry resolveNickByOnlineName(String name) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.getNetworkHandler() == null) return null;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.getConnection() == null) return null;
 
-        for (PlayerListEntry ple : mc.getNetworkHandler().getPlayerList()) {
+        for (PlayerInfo ple : mc.getConnection().getOnlinePlayers()) {
             if (ple == null || ple.getProfile() == null) continue;
             String onlineName = ple.getProfile().name();
             if (onlineName != null && onlineName.equalsIgnoreCase(name)) {
@@ -335,7 +339,7 @@ public class ChatHudMixin {
     }
 
     @Unique
-    private MutableText replaceConfiguredNamesOnePass(String raw, Style effectiveStyle) {
+    private MutableComponent replaceConfiguredNamesOnePass(String raw, Style effectiveStyle) {
         if (raw == null || raw.isEmpty()) return null;
 
         Collection<NickEntry> entries = NickConfig.getAll().values();
@@ -365,7 +369,7 @@ public class ChatHudMixin {
         int[] toOriginal = buildStrippedToOriginalMap(raw);
 
         m.reset();
-        MutableText out = Text.empty();
+        MutableComponent out = Component.empty();
         // Tracks position in the *original* (un-stripped) string so that
         // §-codes that appear before the first visible character are not lost.
         int lastOriginal = 0;
@@ -398,9 +402,9 @@ public class ChatHudMixin {
             }
 
             if (matched == null) {
-                out.append(Text.literal(matchedName).setStyle(sectionStyle));
+                out.append(Component.literal(matchedName).setStyle(sectionStyle));
             } else {
-                Text nameOriginal = Text.literal(matchedName).setStyle(sectionStyle);
+                MutableComponent nameOriginal = Component.literal(matchedName).setStyle(sectionStyle);
                 // Don't apply team color as fallback – the server's intended
                 // styling (e.g. gray names) should be respected.
                 out.append(ColorParser.buildNick(matched, nameOriginal));
@@ -458,9 +462,8 @@ public class ChatHudMixin {
      * interactive behaviour (links, tooltips, run-command, etc.).
      */
     @Unique
-    private boolean hasInteractiveStyle(Text text) {
-        net.minecraft.text.Style style = text.getStyle();
-        if (style == null) return false;
+    private boolean hasInteractiveStyle(Component text) {
+        net.minecraft.network.chat.Style style = text.getStyle();
         return style.getClickEvent() != null || style.getHoverEvent() != null;
     }
 
@@ -477,12 +480,12 @@ public class ChatHudMixin {
      * @return the style active after processing all §-codes in {@code raw}
      */
     @Unique
-    private Style appendParsedSectionCodes(MutableText out, String raw, Style baseStyle) {
+    private Style appendParsedSectionCodes(MutableComponent out, String raw, Style baseStyle) {
         if (raw == null || raw.isEmpty()) return baseStyle;
 
         // Fast path: no §-codes at all
         if (raw.indexOf('§') == -1) {
-            out.append(Text.literal(raw).setStyle(baseStyle));
+            out.append(Component.literal(raw).setStyle(baseStyle));
             return baseStyle;
         }
 
@@ -496,7 +499,7 @@ public class ChatHudMixin {
                         || (code >= 'k' && code <= 'o') || code == 'r') {
                     // Flush buffered text with the current style
                     if (!buf.isEmpty()) {
-                        out.append(Text.literal(buf.toString()).setStyle(current));
+                        out.append(Component.literal(buf.toString()).setStyle(current));
                         buf.setLength(0);
                     }
                     current = applyLegacyCode(current, code);
@@ -509,7 +512,7 @@ public class ChatHudMixin {
         }
         // Flush remaining text
         if (!buf.isEmpty()) {
-            out.append(Text.literal(buf.toString()).setStyle(current));
+            out.append(Component.literal(buf.toString()).setStyle(current));
         }
         return current;
     }
@@ -539,7 +542,7 @@ public class ChatHudMixin {
             case 'f' -> style.withColor(TextColor.fromRgb(0xFFFFFF));
             case 'l' -> style.withBold(true);
             case 'o' -> style.withItalic(true);
-            case 'n' -> style.withUnderline(true);
+            case 'n' -> style.withUnderlined(true);
             case 'm' -> style.withStrikethrough(true);
             case 'k' -> style.withObfuscated(true);
             case 'r' -> Style.EMPTY;
@@ -548,26 +551,26 @@ public class ChatHudMixin {
     }
 
     @Unique
-    private Text rebuildWithNewSiblings(Text text, Style inheritedStyle) {
-        List<Text> siblings = text.getSiblings();
-        if (siblings.isEmpty()) return text;
+    private MutableComponent rebuildWithNewSiblings(Component text, Style inheritedStyle) {
+        List<Component> siblings = text.getSiblings();
+        if (siblings.isEmpty()) return asMutable(text);
 
         Style effectiveStyle = resolveStyle(inheritedStyle, text.getStyle());
 
         boolean anyChanged = false;
-        List<Text> newSiblings = new ArrayList<>(siblings.size());
-        for (Text sibling : siblings) {
-            Text processed = replaceNamesInTree(sibling, effectiveStyle);
+        List<MutableComponent> newSiblings = new ArrayList<>(siblings.size());
+        for (Component sibling : siblings) {
+            MutableComponent processed = replaceNamesInTree(sibling, effectiveStyle);
             newSiblings.add(processed);
             if (processed != sibling) anyChanged = true;
         }
 
         // If nothing changed, return the original object to preserve identity
         // and avoid unnecessary reconstruction that could lose subtle state.
-        if (!anyChanged) return text;
+        if (!anyChanged) return asMutable(text);
 
-        MutableText rebuilt = text.copyContentOnly().setStyle(text.getStyle());
-        for (Text s : newSiblings) {
+        MutableComponent rebuilt = text.plainCopy().setStyle(text.getStyle());
+        for (MutableComponent s : newSiblings) {
             rebuilt.append(s);
         }
         return rebuilt;
@@ -581,25 +584,25 @@ public class ChatHudMixin {
      * hover-to-show-player-info, etc. are not lost.
      */
     @Unique
-    private Text rebuildWithNewSiblingsPreserveInteractive(Text text, Style inheritedStyle) {
-        List<Text> siblings = text.getSiblings();
-        if (siblings.isEmpty()) return text;
+    private MutableComponent rebuildWithNewSiblingsPreserveInteractive(Component text, Style inheritedStyle) {
+        List<Component> siblings = text.getSiblings();
+        if (siblings.isEmpty()) return asMutable(text);
 
         Style effectiveStyle = resolveStyle(inheritedStyle, text.getStyle());
 
         boolean anyChanged = false;
-        List<Text> newSiblings = new ArrayList<>(siblings.size());
-        for (Text sibling : siblings) {
-            Text processed = replaceNamesInTree(sibling, effectiveStyle);
+        List<MutableComponent> newSiblings = new ArrayList<>(siblings.size());
+        for (Component sibling : siblings) {
+            MutableComponent processed = replaceNamesInTree(sibling, effectiveStyle);
             newSiblings.add(processed);
             if (processed != sibling) anyChanged = true;
         }
 
-        if (!anyChanged) return text;
+        if (!anyChanged) return asMutable(text);
 
         // Rebuild: keep the original content and style (including interactive events)
-        MutableText rebuilt = text.copyContentOnly().setStyle(text.getStyle());
-        for (Text s : newSiblings) {
+        MutableComponent rebuilt = text.plainCopy().setStyle(text.getStyle());
+        for (MutableComponent s : newSiblings) {
             rebuilt.append(s);
         }
         return rebuilt;

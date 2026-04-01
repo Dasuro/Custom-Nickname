@@ -6,11 +6,11 @@
   "mixins": [
   ],
   "client": [
-    "PlayerListHudMixin",
-    "PlayerListEntryMixin",
-    "PlayerEntityDisplayNameMixin",
+    "PlayerTabOverlayMixin",
+    "PlayerInfoMixin",
+    "PlayerDisplayNameMixin",
     "EntityRendererMixin",
-    "ChatHudMixin",
+    "ChatComponentMixin",
     "ScoreboardHudMixin"
   ],
   "injectors": {
