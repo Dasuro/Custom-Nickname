@@ -36,4 +36,3 @@ If you have feature ideas or find any bugs, feel free to [open an issue](https:/
 ## License
 
 This project is licensed under the [MIT License](LICENSE.txt).
-
