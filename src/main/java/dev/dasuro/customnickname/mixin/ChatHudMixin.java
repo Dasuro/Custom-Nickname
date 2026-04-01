@@ -7,6 +7,7 @@ import dev.dasuro.customnickname.util.ColorParser;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.text.HoverEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.PlainTextContent;
 import net.minecraft.text.Style;
@@ -164,17 +165,12 @@ public class ChatHudMixin {
 
                     if (a instanceof Text tArg) {
                         if (isChatMessage && i == 0) {
-                            // Player name argument: try exact matching first
+                            // Sender argument: strict replacement only (UUID/exact).
+                            // Do not run generic tree fallback here to avoid double remaps.
                             Text replacedArg = replacePlayerNameArgumentIfExact(tArg, effectiveStyle);
                             if (replacedArg != tArg) {
                                 newArgs[i] = replacedArg;
                                 changed = true;
-                            } else {
-                                Text deeper = replaceNamesInTree(tArg, effectiveStyle);
-                                if (deeper != tArg) {
-                                    newArgs[i] = deeper;
-                                    changed = true;
-                                }
                             }
                         } else {
                             // Message body or non-chat translatable: use tree walk
@@ -240,6 +236,26 @@ public class ChatHudMixin {
         String full = tArg.getString();
         if (full == null || full.isBlank()) return tArg;
 
+        // Prefer UUID-based sender resolution when available (stable against display-name rewrites).
+        UUID senderUuid = extractEntityUuid(tArg);
+        if (senderUuid != null) {
+            NickEntry entry = NickConfig.get(senderUuid);
+            if (entry != null) {
+                Style effectiveStyle = resolveStyle(inheritedStyle, tArg.getStyle());
+                String cleaned = full.replace(StorageConfig.INDICATOR, "")
+                                     .replace(StorageConfig.INDICATOR.trim(), "")
+                                     .trim();
+                if (cleaned.isEmpty()) return tArg;
+
+                Style nameStyle = parseSectionCodesForStyle(cleaned, effectiveStyle);
+                String nameText = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
+                Text base = Text.literal(nameText).setStyle(nameStyle);
+                return ColorParser.buildNick(entry, base);
+            }
+            // UUID found but no config entry: keep original argument untouched.
+            return tArg;
+        }
+
         // Strip any indicator that other mixins may have appended (e.g. " ✎")
         String cleaned = full.replace(StorageConfig.INDICATOR, "")
                              .replace(StorageConfig.INDICATOR.trim(), "")
@@ -270,22 +286,17 @@ public class ChatHudMixin {
             NickEntry byOnline = resolveNickByOnlineName(candidate);
             if (byOnline != null) {
                 // Parse any §-codes in 'cleaned' to determine the style that
-                // should apply to the name.  E.g. "§7PlayerName" → style = gray.
+                // should apply to the name.  E.g. "§7PlayerName" -> style = gray.
                 Style nameStyle = parseSectionCodesForStyle(cleaned, effectiveStyle);
                 Text base = Text.literal(candidate).setStyle(nameStyle);
-                // Don't apply team color as fallback – the server's intended
+                // Don't apply team color as fallback - the server's intended
                 // styling (e.g. gray names) should be respected.
                 return ColorParser.buildNick(byOnline, base);
             }
         }
 
-        // Try 2: the argument contains team prefix/suffix + player name
-        // (e.g. "Owner | Dasuro") – use the same one-pass replacement
-        MutableText replaced = replaceConfiguredNamesOnePass(cleaned, effectiveStyle);
-        if (replaced != null) {
-            return replaced;
-        }
-
+        // For sender argument, avoid broad one-pass fallback to prevent
+        // accidental remaps when display names are already modified elsewhere.
         return tArg;
     }
 
@@ -450,6 +461,23 @@ public class ChatHudMixin {
         // Map the "past-the-end" position
         map[si] = oi;
         return map;
+    }
+
+    @Unique
+    private UUID extractEntityUuid(Text text) {
+        HoverEvent hover = text.getStyle() != null ? text.getStyle().getHoverEvent() : null;
+        if (hover instanceof HoverEvent.ShowEntity showEntity && hover.getAction() == HoverEvent.Action.SHOW_ENTITY) {
+            HoverEvent.EntityContent entity = showEntity.entity();
+            if (entity != null && entity.uuid != null) {
+                return entity.uuid;
+            }
+        }
+
+        for (Text sibling : text.getSiblings()) {
+            UUID found = extractEntityUuid(sibling);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     /**
