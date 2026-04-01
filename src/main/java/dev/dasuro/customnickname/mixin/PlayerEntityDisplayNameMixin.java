@@ -50,12 +50,14 @@ public class PlayerEntityDisplayNameMixin {
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        // Some nametag render paths use getName() directly; include configured team affixes here.
+        // getName() wird von manchen Mods anschließend noch mit Team.decorateName verarbeitet.
+        // Daher hier bewusst ohne Team-Prefix/Suffix UND ohne Indikator zurückgeben,
+        // damit der Chat den Indikator nicht mitten im Namen bekommt.
         Text originalResult = cir.getReturnValue();
         Team team = self.getScoreboardTeam();
         Text baseName = NickDisplayBuilder.buildStyledBaseName(currentName, originalResult, team);
         MutableText nickComponent = ColorParser.buildNick(nick, baseName);
 
-        cir.setReturnValue(NickDisplayBuilder.buildDisplay(nick, team, nickComponent));
+        cir.setReturnValue(nickComponent);
     }
 }

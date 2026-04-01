@@ -159,40 +159,40 @@ public abstract class ScoreboardHudMixin {
         }
 
         // The nickname itself – use the style from the original text segment
-        // at the match position as color reference, falling back to team color.
-        net.minecraft.text.Style nameStyle = customnickname$getStyleAtPosition(segments, bestStart);
-        Text baseName;
-        if (nameStyle != null && nameStyle.getColor() != null) {
-            baseName = Text.literal(bestName).setStyle(nameStyle);
-        } else if (team != null && team.getColor().getColorValue() != null) {
-            baseName = Text.literal(bestName).setStyle(
-                    net.minecraft.text.Style.EMPTY.withColor(net.minecraft.text.TextColor.fromRgb(team.getColor().getColorValue()))
-            );
-        } else {
-            baseName = Text.literal(bestName);
-        }
-        result.append(ColorParser.buildNick(nickEntry, baseName));
+         // at the match position as color reference, falling back to team color.
+         net.minecraft.text.Style nameStyle = customnickname$getStyleAtPosition(segments, bestStart);
+         Text baseName;
+         if (nameStyle != null && nameStyle.getColor() != null) {
+             baseName = Text.literal(bestName).setStyle(nameStyle);
+         } else if (team != null && team.getColor().getColorValue() != null) {
+             baseName = Text.literal(bestName).setStyle(
+                     net.minecraft.text.Style.EMPTY.withColor(net.minecraft.text.TextColor.fromRgb(team.getColor().getColorValue()))
+             );
+         } else {
+             baseName = Text.literal(bestName);
+         }
+         result.append(ColorParser.buildNick(nickEntry, baseName));
 
-        if (StorageConfig.isShowIndicator()) {
-            result.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
-        }
+         // Handle suffix area
+         if (!afterName.isEmpty()) {
+             if (nickEntry.showSuffix) {
+                 result.append(customnickname$reconstructRange(segments, bestEnd, raw.length()));
+             } else {
+                 // Strip team suffix from afterName, keep the rest (e.g. score)
+                 String nonSuffix = customnickname$removeTeamPart(afterName, teamSuffixStr);
+                 if (!nonSuffix.isEmpty()) {
+                     // The non-suffix part is at the end of afterName
+                     int nonSuffixStart = raw.length() - nonSuffix.length();
+                     if (nonSuffixStart >= bestEnd) {
+                         result.append(customnickname$reconstructRange(segments, nonSuffixStart, raw.length()));
+                     }
+                 }
+             }
+         }
 
-        // Handle suffix area
-        if (!afterName.isEmpty()) {
-            if (nickEntry.showSuffix) {
-                result.append(customnickname$reconstructRange(segments, bestEnd, raw.length()));
-            } else {
-                // Strip team suffix from afterName, keep the rest (e.g. score)
-                String nonSuffix = customnickname$removeTeamPart(afterName, teamSuffixStr);
-                if (!nonSuffix.isEmpty()) {
-                    // The non-suffix part is at the end of afterName
-                    int nonSuffixStart = raw.length() - nonSuffix.length();
-                    if (nonSuffixStart >= bestEnd) {
-                        result.append(customnickname$reconstructRange(segments, nonSuffixStart, raw.length()));
-                    }
-                }
-            }
-        }
+         if (StorageConfig.isShowIndicator()) {
+             result.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+         }
 
         return result;
     }

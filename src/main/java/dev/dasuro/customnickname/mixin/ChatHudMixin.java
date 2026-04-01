@@ -37,18 +37,120 @@ public class ChatHudMixin {
     )
     private Text customnickname$onAddMessage(Text original) {
         Text result = replaceNamesInTree(original);
+        boolean senderHasNick = isChatMessageFromNickedSender(original);
 
 
-        // If indicator is enabled and something was actually replaced, append ✎ once at the end
-        if (StorageConfig.isShowIndicator() && result != original) {
-            // Strip any indicator characters that leaked in from other mixins
-            // (e.g. PlayerListEntryMixin adding ✎ to display names used as chat arguments)
-            MutableText cleaned = stripIndicator(result);
-            cleaned.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
-            return cleaned;
+        // Show exactly one indicator at the very end when either
+        // a name got replaced or the sender itself is nicked.
+        if (StorageConfig.isShowIndicator() && (result != original || senderHasNick)) {
+            // Strip leaked indicators only from the sender argument (chat.type.* arg0),
+            // so user-written message content is not modified.
+            Text cleaned = stripIndicatorFromChatSender(result);
+            MutableText out = Text.empty();
+            out.append(cleaned);
+            out.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
+            return out;
         }
 
         return result;
+    }
+
+    @Unique
+    private boolean isChatMessageFromNickedSender(Text text) {
+        if (text == null) return false;
+
+        if (text.getContent() instanceof TranslatableTextContent tc && tc.getKey().startsWith("chat.type.")) {
+            Object[] args = tc.getArgs();
+            if (args != null && args.length > 0) {
+                return isNickedSenderArg(args[0]);
+            }
+        }
+
+        for (Text sibling : text.getSiblings()) {
+            if (isChatMessageFromNickedSender(sibling)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    @Unique
+    private Text stripIndicatorFromChatSender(Text text) {
+        if (text == null) return Text.empty();
+
+        if (text.getContent() instanceof TranslatableTextContent tc && tc.getKey().startsWith("chat.type.")) {
+            Object[] args = tc.getArgs();
+            if (args != null && args.length > 0) {
+                Object[] newArgs = args.clone();
+                Object senderArg = newArgs[0];
+
+                if (senderArg instanceof Text senderText) {
+                    newArgs[0] = stripIndicator(senderText);
+                } else if (senderArg instanceof String senderStr) {
+                    newArgs[0] = senderStr.replace(StorageConfig.INDICATOR, "")
+                                          .replace(StorageConfig.INDICATOR.trim(), "");
+                }
+
+                MutableText rebuilt = Text.translatable(tc.getKey(), newArgs).setStyle(text.getStyle());
+                for (Text sibling : text.getSiblings()) {
+                    rebuilt.append(stripIndicatorFromChatSender(sibling));
+                }
+                return rebuilt;
+            }
+        }
+
+        // Non-chat nodes are kept untouched so message text stays exactly as sent.
+        return text;
+    }
+
+    @Unique
+    private boolean isNickedSenderArg(Object arg) {
+        if (arg instanceof Text tArg) {
+            String full = tArg.getString();
+            if (full != null && full.contains(StorageConfig.INDICATOR.trim())) {
+                return true;
+            }
+
+            UUID senderUuid = extractEntityUuid(tArg);
+            if (senderUuid != null) {
+                return NickConfig.get(senderUuid) != null;
+            }
+
+            if (full == null || full.isBlank()) return false;
+
+            String cleaned = full.replace(StorageConfig.INDICATOR, "")
+                                 .replace(StorageConfig.INDICATOR.trim(), "")
+                                 .trim();
+            if (cleaned.isEmpty()) return false;
+
+            String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
+            String candidate = cleanedNoSection.replaceAll("[^A-Za-z0-9_]", "");
+            if (!candidate.isEmpty() && !cleanedNoSection.contains(" ")) {
+                return resolveNickByOnlineName(candidate) != null;
+            }
+
+            return false;
+        }
+
+        if (arg instanceof String sArg) {
+            if (sArg.contains(StorageConfig.INDICATOR.trim())) {
+                return true;
+            }
+
+            String cleaned = sArg.replace(StorageConfig.INDICATOR, "")
+                                 .replace(StorageConfig.INDICATOR.trim(), "")
+                                 .trim();
+            if (cleaned.isEmpty()) return false;
+
+            String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
+            String candidate = cleanedNoSection.replaceAll("[^A-Za-z0-9_]", "");
+            if (!candidate.isEmpty() && !cleanedNoSection.contains(" ")) {
+                return resolveNickByOnlineName(candidate) != null;
+            }
+        }
+
+        return false;
     }
 
     /**
