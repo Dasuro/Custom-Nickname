@@ -93,8 +93,8 @@ public class CustomNickConfigScreen extends Screen {
                 .dimensions(tabX, tabY, tabWidth, tabHeight)
                 .build();
         this.addTabBtn.active = true;
-        this.addTabBtn.setAlpha(0.0f);
-        this.addDrawableChild(this.addTabBtn);
+        this.addTabBtn.visible = false;
+        this.addSelectableChild(this.addTabBtn);
 
         this.entriesTabBtn = ButtonWidget.builder(t("tab.entries"), b -> {
                     tab = Tab.ENTRIES;
@@ -103,8 +103,8 @@ public class CustomNickConfigScreen extends Screen {
                 .dimensions(tabX + tabWidth + tabGap, tabY, tabWidth, tabHeight)
                 .build();
         this.entriesTabBtn.active = true;
-        this.entriesTabBtn.setAlpha(0.0f);
-        this.addDrawableChild(this.entriesTabBtn);
+        this.entriesTabBtn.visible = false;
+        this.addSelectableChild(this.entriesTabBtn);
 
         this.optionsTabBtn = ButtonWidget.builder(t("tab.options"), b -> {
                     tab = Tab.OPTIONS;
@@ -113,8 +113,8 @@ public class CustomNickConfigScreen extends Screen {
                 .dimensions(tabX + (tabWidth + tabGap) * 2, tabY, tabWidth, tabHeight)
                 .build();
         this.optionsTabBtn.active = true;
-        this.optionsTabBtn.setAlpha(0.0f);
-        this.addDrawableChild(this.optionsTabBtn);
+        this.optionsTabBtn.visible = false;
+        this.addSelectableChild(this.optionsTabBtn);
 
         int contentTop = tabY + tabHeight + 8;
 
@@ -628,7 +628,45 @@ public class CustomNickConfigScreen extends Screen {
         if (errorModal != null && errorModal.isOpen()) {
             return errorModal.mouseClicked(click, doubleClick);
         }
+
+        // Handle tab button clicks manually
+        double mouseX = click.x();
+        double mouseY = click.y();
+
+        if (isInsideTab(this.addTabBtn, mouseX, mouseY)) {
+            return switchTabFromMouse(Tab.ADD, this.addTabBtn);
+        }
+        if (isInsideTab(this.entriesTabBtn, mouseX, mouseY)) {
+            return switchTabFromMouse(Tab.ENTRIES, this.entriesTabBtn);
+        }
+        if (isInsideTab(this.optionsTabBtn, mouseX, mouseY)) {
+            return switchTabFromMouse(Tab.OPTIONS, this.optionsTabBtn);
+        }
+
         return super.mouseClicked(click, doubleClick);
+    }
+
+    private boolean switchTabFromMouse(Tab targetTab, ButtonWidget tabButton) {
+        if (this.tab == targetTab) {
+            return true;
+        }
+
+        if (tabButton != null) {
+            tabButton.playDownSound(MinecraftClient.getInstance().getSoundManager());
+        }
+
+        this.tab = targetTab;
+        this.init();
+        return true;
+    }
+
+
+    private static boolean isInsideTab(ButtonWidget button, double mouseX, double mouseY) {
+        if (button == null) return false;
+        return mouseX >= button.getX()
+                && mouseX < button.getX() + button.getWidth()
+                && mouseY >= button.getY()
+                && mouseY < button.getY() + button.getHeight();
     }
 
     @Override
