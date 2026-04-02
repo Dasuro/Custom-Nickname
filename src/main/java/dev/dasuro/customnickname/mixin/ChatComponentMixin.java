@@ -31,24 +31,129 @@ public class ChatComponentMixin {
 
 
     @ModifyVariable(
-            method = "addPlayerMessage(Lnet/minecraft/network/chat/Component;Lnet/minecraft/network/chat/MessageSignature;Lnet/minecraft/client/multiplayer/chat/GuiMessageTag;)V",
+            method = "addMessage(Lnet/minecraft/network/chat/Component;Lnet/minecraft/network/chat/MessageSignature;Lnet/minecraft/client/multiplayer/chat/GuiMessageSource;Lnet/minecraft/client/multiplayer/chat/GuiMessageTag;)V",
             at = @At("HEAD"),
             argsOnly = true
     )
     private Component customnickname$onAddMessage(Component original) {
+        return customnickname$transformIncomingMessage(original);
+    }
+
+    @Unique
+    private Component customnickname$transformIncomingMessage(Component original) {
         MutableComponent result = replaceNamesInTree(original);
+        boolean senderHasNick = isChatMessageFromNickedSender(original);
 
 
-        // If indicator is enabled and something was actually replaced, append ✎ once at the end
-        if (StorageConfig.isShowIndicator() && result != original) {
-            // Strip any indicator characters that leaked in from other mixins
-            // (e.g. PlayerListEntryMixin adding ✎ to display names used as chat arguments)
-            MutableComponent cleaned = stripIndicator(result);
-            cleaned.append(Component.literal(StorageConfig.INDICATOR).withColor(0xFFFF00));
-            return cleaned;
+        // Show exactly one indicator at the very end when either
+        // a name got replaced or the sender itself is nicked.
+        if (StorageConfig.isShowIndicator() && (result != original || senderHasNick)) {
+            // Strip leaked indicators only from the sender argument (chat.type.* arg0),
+            // so user-written message content is not modified.
+            MutableComponent cleaned = stripIndicatorFromChatSender(result);
+            MutableComponent out = Component.empty();
+            out.append(cleaned);
+            out.append(Component.literal(StorageConfig.INDICATOR).withColor(0xFFFF00));
+            return out;
         }
 
         return result;
+    }
+
+    @Unique
+    private boolean isChatMessageFromNickedSender(Component text) {
+        if (text == null) return false;
+        if (text.getContents() instanceof TranslatableContents tc && tc.getKey().startsWith("chat.type.")) {
+            Object[] args = tc.getArgs();
+            if (args != null && args.length > 0) {
+                return isNickedSenderArg(args[0]);
+            }
+        }
+        for (Component sibling : text.getSiblings()) {
+            if (isChatMessageFromNickedSender(sibling)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    @Unique
+    private boolean isNickedSenderArg(Object arg) {
+        if (arg instanceof Component tArg) {
+            String full = tArg.getString();
+            if (full != null && full.contains(StorageConfig.INDICATOR.trim())) {
+                return true;
+            }
+
+            UUID senderUuid = extractEntityUuid(tArg);
+            if (senderUuid != null) {
+                return NickConfig.get(senderUuid) != null;
+            }
+
+            if (full == null || full.isBlank()) return false;
+
+            String cleaned = full.replace(StorageConfig.INDICATOR, "")
+                    .replace(StorageConfig.INDICATOR.trim(), "")
+                    .trim();
+            if (cleaned.isEmpty()) return false;
+
+            String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
+            String candidate = cleanedNoSection.replaceAll("[^A-Za-z0-9_]", "");
+            if (!candidate.isEmpty() && !cleanedNoSection.contains(" ")) {
+                return resolveNickByOnlineName(candidate) != null;
+            }
+
+            return false;
+        }
+
+        if (arg instanceof String sArg) {
+            if (sArg.contains(StorageConfig.INDICATOR.trim())) {
+                return true;
+            }
+
+            String cleaned = sArg.replace(StorageConfig.INDICATOR, "")
+                    .replace(StorageConfig.INDICATOR.trim(), "")
+                    .trim();
+            if (cleaned.isEmpty()) return false;
+
+            String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
+            String candidate = cleanedNoSection.replaceAll("[^A-Za-z0-9_]", "");
+            if (!candidate.isEmpty() && !cleanedNoSection.contains(" ")) {
+                return resolveNickByOnlineName(candidate) != null;
+            }
+        }
+
+        return false;
+    }
+
+    @Unique
+    private MutableComponent stripIndicatorFromChatSender(Component text) {
+        if (text == null) return Component.empty();
+
+        if (text.getContents() instanceof TranslatableContents tc && tc.getKey().startsWith("chat.type.")) {
+            Object[] args = tc.getArgs();
+            if (args.length > 0) {
+                Object[] newArgs = args.clone();
+                Object senderArg = newArgs[0];
+
+                if (senderArg instanceof Component senderText) {
+                    newArgs[0] = stripIndicator(senderText);
+                } else if (senderArg instanceof String senderStr) {
+                    newArgs[0] = senderStr.replace(StorageConfig.INDICATOR, "")
+                            .replace(StorageConfig.INDICATOR.trim(), "");
+                }
+
+                MutableComponent rebuilt = Component.translatable(tc.getKey(), newArgs).setStyle(text.getStyle());
+                for (Component sibling : text.getSiblings()) {
+                    rebuilt.append(stripIndicatorFromChatSender(sibling));
+                }
+                return rebuilt;
+            }
+        }
+
+        // Non-chat nodes are kept untouched so message text stays exactly as sent.
+        return asMutable(text);
     }
 
     /**
