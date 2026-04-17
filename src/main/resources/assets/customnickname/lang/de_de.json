@@ -34,10 +34,12 @@
   "gui.customnickname.config.search_label": "Suche: ",
   "gui.customnickname.config.storage_mode_label": "Speichermodus:  ",
   "gui.customnickname.config.indicator_label": "Nicknamen-Indikator:  ",
+  "gui.customnickname.config.server_color_marker_label": "Farbmarker:  ",
   "gui.customnickname.config.tooltip.global": "Für alle Instanzen gemeinsam (.minecraft)",
   "gui.customnickname.config.tooltip.local": "Nur für diese Modpack-Instanz",
   "gui.customnickname.config.tooltip.indicator_prefix": "Zeigt ein ",
   "gui.customnickname.config.tooltip.indicator_suffix": " neben Spielern mit Nicknamen oder bei Nachrichten mit Spielern mit Nicknamen im Chat an.",
+  "gui.customnickname.config.tooltip.server_color_marker": "Zeigt ein ■ in der Originalfarbe hinter custom Farb-Nicks.",
   "gui.customnickname.config.preview_label": "Vorschau: ",
 
   "gui.customnickname.edit.title": "Eintrag bearbeiten",

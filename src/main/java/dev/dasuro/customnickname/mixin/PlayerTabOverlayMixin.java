@@ -45,6 +45,6 @@ public class PlayerTabOverlayMixin {
         MutableComponent baseName = NickDisplayBuilder.buildStyledBaseName(currentName, null, team);
         MutableComponent nickComponent = ColorParser.buildNick(nick, baseName);
 
-        cir.setReturnValue(NickDisplayBuilder.buildDisplay(nick, team, nickComponent));
+        cir.setReturnValue(NickDisplayBuilder.buildDisplay(nick, team, nickComponent, baseName));
     }
 }

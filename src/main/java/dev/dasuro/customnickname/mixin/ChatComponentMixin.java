@@ -4,6 +4,7 @@ import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
+import dev.dasuro.customnickname.util.NickDisplayBuilder;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.PlayerInfo;
@@ -82,7 +83,7 @@ public class ChatComponentMixin {
     private boolean isNickedSenderArg(Object arg) {
         if (arg instanceof Component tArg) {
             String full = tArg.getString();
-            if (full != null && full.contains(StorageConfig.INDICATOR.trim())) {
+            if (full != null && (full.contains(StorageConfig.INDICATOR.trim()) || full.contains(StorageConfig.SERVER_COLOR_MARKER.trim()))) {
                 return true;
             }
 
@@ -93,9 +94,7 @@ public class ChatComponentMixin {
 
             if (full == null || full.isBlank()) return false;
 
-            String cleaned = full.replace(StorageConfig.INDICATOR, "")
-                    .replace(StorageConfig.INDICATOR.trim(), "")
-                    .trim();
+            String cleaned = stripKnownMarkers(full).trim();
             if (cleaned.isEmpty()) return false;
 
             String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
@@ -108,13 +107,11 @@ public class ChatComponentMixin {
         }
 
         if (arg instanceof String sArg) {
-            if (sArg.contains(StorageConfig.INDICATOR.trim())) {
+            if (sArg.contains(StorageConfig.INDICATOR.trim()) || sArg.contains(StorageConfig.SERVER_COLOR_MARKER.trim())) {
                 return true;
             }
 
-            String cleaned = sArg.replace(StorageConfig.INDICATOR, "")
-                    .replace(StorageConfig.INDICATOR.trim(), "")
-                    .trim();
+            String cleaned = stripKnownMarkers(sArg).trim();
             if (cleaned.isEmpty()) return false;
 
             String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
@@ -348,22 +345,24 @@ public class ChatComponentMixin {
                 Style effectiveStyle = resolveStyle(inheritedStyle, tArg.getStyle());
                 String cleaned = full.replace(StorageConfig.INDICATOR, "")
                                      .replace(StorageConfig.INDICATOR.trim(), "")
+                                     .replace(StorageConfig.SERVER_COLOR_MARKER, "")
+                                     .replace(StorageConfig.SERVER_COLOR_MARKER.trim(), "")
                                      .trim();
                 if (cleaned.isEmpty()) return asMutable(tArg);
 
                 Style nameStyle = parseSectionCodesForStyle(cleaned, effectiveStyle);
                 String nameText = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
                 MutableComponent base = Component.literal(nameText).setStyle(nameStyle);
-                return ColorParser.buildNick(entry, base);
+                MutableComponent replaced = ColorParser.buildNick(entry, base);
+                NickDisplayBuilder.appendServerColorMarker(replaced, entry, base, null);
+                return replaced;
             }
             // UUID found but no config entry: keep original argument untouched.
             return asMutable(tArg);
         }
 
         // Strip any indicator that other mixins may have appended (e.g. " ✎")
-        String cleaned = full.replace(StorageConfig.INDICATOR, "")
-                             .replace(StorageConfig.INDICATOR.trim(), "")
-                             .trim();
+        String cleaned = stripKnownMarkers(full).trim();
         if (cleaned.isEmpty()) return asMutable(tArg);
 
         // Also strip §-formatting codes so names are recognised even when the
@@ -395,7 +394,9 @@ public class ChatComponentMixin {
                 MutableComponent base = Component.literal(candidate).setStyle(nameStyle);
                 // Don't apply team color as fallback – the server's intended
                 // styling (e.g. gray names) should be respected.
-                return ColorParser.buildNick(byOnline, base);
+                MutableComponent replaced = ColorParser.buildNick(byOnline, base);
+                NickDisplayBuilder.appendServerColorMarker(replaced, byOnline, base, null);
+                return replaced;
             }
         }
 
@@ -523,7 +524,9 @@ public class ChatComponentMixin {
                 MutableComponent nameOriginal = Component.literal(matchedName).setStyle(sectionStyle);
                 // Don't apply team color as fallback – the server's intended
                 // styling (e.g. gray names) should be respected.
-                out.append(ColorParser.buildNick(matched, nameOriginal));
+                MutableComponent replaced = ColorParser.buildNick(matched, nameOriginal);
+                NickDisplayBuilder.appendServerColorMarker(replaced, matched, nameOriginal, null);
+                out.append(replaced);
             }
 
             lastOriginal = toOriginal[m.end()];
@@ -682,6 +685,15 @@ public class ChatComponentMixin {
             case 'r' -> Style.EMPTY;
             default  -> style;
         };
+    }
+
+    @Unique
+    private String stripKnownMarkers(String text) {
+        if (text == null || text.isEmpty()) return "";
+        return text.replace(StorageConfig.INDICATOR, "")
+                .replace(StorageConfig.INDICATOR.trim(), "")
+                .replace(StorageConfig.SERVER_COLOR_MARKER, "")
+                .replace(StorageConfig.SERVER_COLOR_MARKER.trim(), "");
     }
 
     @Unique

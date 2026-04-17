@@ -59,6 +59,8 @@ public class CustomNickConfigScreen extends Screen {
     private int optionsLabelY;
     private int indicatorLabelX;
     private int indicatorLabelY;
+    private int serverColorMarkerLabelX;
+    private int serverColorMarkerLabelY;
     private ErrorModal errorModal;
     private Button addTabBtn;
     private Button entriesTabBtn;
@@ -472,6 +474,29 @@ public class CustomNickConfigScreen extends Screen {
 
         this.indicatorLabelX = indicatorStartX;
         this.indicatorLabelY = indicatorY + (btnH - this.font.lineHeight) / 2;
+
+        // --- Server-color marker toggle ---
+        int markerY = indicatorY + btnH + 8;
+        int markerLabelWidth = this.font.width(t("server_color_marker_label"));
+        int markerBtnW = 60;
+        int markerTotalW = markerLabelWidth + markerBtnW;
+        int markerStartX = (this.width - markerTotalW) / 2;
+
+        Button markerBtn = Button.builder(
+                        StorageConfig.isShowServerColorMarker() ? t("state.on") : t("state.off"),
+                        b -> {
+                            StorageConfig.setShowServerColorMarker(!StorageConfig.isShowServerColorMarker());
+                            b.setMessage(StorageConfig.isShowServerColorMarker() ? t("state.on") : t("state.off"));
+                        })
+                .bounds(markerStartX + markerLabelWidth, markerY, markerBtnW, btnH)
+                .tooltip(Tooltip.create(
+                        Component.empty()
+                                .append(t("tooltip.server_color_marker"))))
+                .build();
+        this.addRenderableWidget(markerBtn);
+
+        this.serverColorMarkerLabelX = markerStartX;
+        this.serverColorMarkerLabelY = markerY + (btnH - this.font.lineHeight) / 2;
     }
 
     @Override
@@ -554,6 +579,14 @@ public class CustomNickConfigScreen extends Screen {
                     t("indicator_label"),
                     indicatorLabelX,
                     indicatorLabelY,
+                    0xFFFFFFFF,
+                    true
+            );
+            context.text(
+                    this.font,
+                    t("server_color_marker_label"),
+                    serverColorMarkerLabelX,
+                    serverColorMarkerLabelY,
                     0xFFFFFFFF,
                     true
             );

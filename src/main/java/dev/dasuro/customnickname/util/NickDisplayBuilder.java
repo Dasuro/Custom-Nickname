@@ -34,6 +34,15 @@ public final class NickDisplayBuilder {
     }
 
     public static MutableComponent buildDisplay(NickEntry nick, PlayerTeam team, MutableComponent nickComponent) {
+        return buildDisplay(nick, team, nickComponent, null);
+    }
+
+    public static MutableComponent buildDisplay(
+            NickEntry nick,
+            PlayerTeam team,
+            MutableComponent nickComponent,
+            MutableComponent serverOriginalName
+    ) {
         MutableComponent full = Component.empty();
 
         if (team != null && nick.showPrefix) {
@@ -45,6 +54,8 @@ public final class NickDisplayBuilder {
         if (team != null && nick.showSuffix) {
             full.append(team.getPlayerSuffix());
         }
+
+        appendServerColorMarker(full, nick, serverOriginalName, team);
 
         if (StorageConfig.isShowIndicator()) {
             full.append(Component.literal(StorageConfig.INDICATOR).withColor(0xFFFF00));
@@ -96,7 +107,7 @@ public final class NickDisplayBuilder {
             if (strictHideAffixesWhenDisabled && (!nick.showPrefix || !nick.showSuffix)) {
                 MutableComponent baseName = buildStyledBaseName(currentName, original, team);
                 MutableComponent nickComponent = ColorParser.buildNick(nick, baseName);
-                return buildDisplay(nick, team, nickComponent);
+                return buildDisplay(nick, team, nickComponent, baseName);
             }
             return original;
         }
@@ -104,7 +115,7 @@ public final class NickDisplayBuilder {
         MutableComponent baseName = buildStyledBaseName(currentName, original, team);
         MutableComponent nickComponent = ColorParser.buildNick(nick, baseName);
 
-        return buildDisplay(nick, team, nickComponent);
+        return buildDisplay(nick, team, nickComponent, baseName);
     }
 
     private static MutableComponent replaceInsideOriginal(
@@ -178,6 +189,8 @@ public final class NickDisplayBuilder {
                 }
             }
         }
+
+        appendServerColorMarker(result, nick, baseName, team);
 
         if (StorageConfig.isShowIndicator()) {
             result.append(Component.literal(StorageConfig.INDICATOR).withColor(0xFFFF00));
@@ -331,6 +344,36 @@ public final class NickDisplayBuilder {
         }
 
         return Style.EMPTY;
+    }
+
+    public static boolean shouldShowServerColorMarker(NickEntry nick) {
+        if (nick == null || !StorageConfig.isShowServerColorMarker()) return false;
+        if (nick.rainbow) return true;
+        return ColorParser.hasActualColorCodes(nick.nickname);
+    }
+
+    public static void appendServerColorMarker(
+            MutableComponent out,
+            NickEntry nick,
+            Component serverOriginalName,
+            PlayerTeam team
+    ) {
+        if (out == null || !shouldShowServerColorMarker(nick)) return;
+
+        Integer color = null;
+        Style nameStyle = extractFirstStyle(serverOriginalName);
+        if (nameStyle != null && nameStyle != Style.EMPTY && nameStyle.getColor() != null) {
+            color = nameStyle.getColor().getValue();
+        }
+        if (color == null && team != null && team.getColor() != null && team.getColor().getColor() != null) {
+            color = team.getColor().getColor();
+        }
+
+        MutableComponent marker = Component.literal(StorageConfig.SERVER_COLOR_MARKER);
+        if (color != null) {
+            marker = marker.withColor(color);
+        }
+        out.append(marker);
     }
 }
 
