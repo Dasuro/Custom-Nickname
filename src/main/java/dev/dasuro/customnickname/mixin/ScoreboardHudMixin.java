@@ -4,6 +4,7 @@ import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
+import dev.dasuro.customnickname.util.NickDisplayBuilder;
 import dev.dasuro.customnickname.util.StyledSegment;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -189,6 +190,8 @@ public abstract class ScoreboardHudMixin {
                  }
              }
          }
+
+         NickDisplayBuilder.appendServerColorMarker(result, nickEntry, baseName);
 
          if (StorageConfig.isShowIndicator()) {
              result.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));

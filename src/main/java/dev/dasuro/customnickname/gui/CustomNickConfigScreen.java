@@ -59,6 +59,8 @@ public class CustomNickConfigScreen extends Screen {
     private int optionsLabelY;
     private int indicatorLabelX;
     private int indicatorLabelY;
+    private int serverColorMarkerLabelX;
+    private int serverColorMarkerLabelY;
     private ErrorModal errorModal;
     private ButtonWidget addTabBtn;
     private ButtonWidget entriesTabBtn;
@@ -472,6 +474,27 @@ public class CustomNickConfigScreen extends Screen {
 
         this.indicatorLabelX = indicatorStartX;
         this.indicatorLabelY = indicatorY + (btnH - this.textRenderer.fontHeight) / 2;
+
+        // --- Server-color marker toggle (under nickname indicator) ---
+        int markerY = indicatorY + btnH + 8;
+        int markerLabelWidth = this.textRenderer.getWidth(t("server_color_marker_label"));
+        int markerBtnW = 60;
+        int markerTotalW = markerLabelWidth + markerBtnW;
+        int markerStartX = (this.width - markerTotalW) / 2;
+
+        ButtonWidget markerBtn = ButtonWidget.builder(
+                        StorageConfig.isShowServerColorMarker() ? t("state.on") : t("state.off"),
+                        b -> {
+                            StorageConfig.setShowServerColorMarker(!StorageConfig.isShowServerColorMarker());
+                            b.setMessage(StorageConfig.isShowServerColorMarker() ? t("state.on") : t("state.off"));
+                        })
+                .dimensions(markerStartX + markerLabelWidth, markerY, markerBtnW, btnH)
+                .tooltip(Tooltip.of(t("tooltip.server_color_marker")))
+                .build();
+        this.addDrawableChild(markerBtn);
+
+        this.serverColorMarkerLabelX = markerStartX;
+        this.serverColorMarkerLabelY = markerY + (btnH - this.textRenderer.fontHeight) / 2;
     }
 
     @Override
@@ -553,6 +576,13 @@ public class CustomNickConfigScreen extends Screen {
                     t("indicator_label"),
                     indicatorLabelX,
                     indicatorLabelY,
+                    0xFFFFFFFF
+            );
+            context.drawTextWithShadow(
+                    this.textRenderer,
+                    t("server_color_marker_label"),
+                    serverColorMarkerLabelX,
+                    serverColorMarkerLabelY,
                     0xFFFFFFFF
             );
         }

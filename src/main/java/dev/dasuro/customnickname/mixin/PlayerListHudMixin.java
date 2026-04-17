@@ -55,6 +55,6 @@ public class PlayerListHudMixin {
         Text baseName = NickDisplayBuilder.buildStyledBaseName(currentName, null, team);
         MutableText nickComponent = ColorParser.buildNick(nick, baseName);
 
-        cir.setReturnValue(NickDisplayBuilder.buildDisplay(nick, team, nickComponent));
+        cir.setReturnValue(NickDisplayBuilder.buildDisplay(nick, team, nickComponent, baseName));
     }
 }

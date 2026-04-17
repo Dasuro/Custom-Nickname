@@ -4,6 +4,7 @@ import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
 import dev.dasuro.customnickname.config.StorageConfig;
 import dev.dasuro.customnickname.util.ColorParser;
+import dev.dasuro.customnickname.util.NickDisplayBuilder;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.client.network.PlayerListEntry;
@@ -352,7 +353,9 @@ public class ChatHudMixin {
                 Style nameStyle = parseSectionCodesForStyle(cleaned, effectiveStyle);
                 String nameText = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
                 Text base = Text.literal(nameText).setStyle(nameStyle);
-                return ColorParser.buildNick(entry, base);
+                MutableText replaced = ColorParser.buildNick(entry, base);
+                NickDisplayBuilder.appendServerColorMarker(replaced, entry, base);
+                return replaced;
             }
             // UUID found but no config entry: keep original argument untouched.
             return tArg;
@@ -393,7 +396,9 @@ public class ChatHudMixin {
                 Text base = Text.literal(candidate).setStyle(nameStyle);
                 // Don't apply team color as fallback - the server's intended
                 // styling (e.g. gray names) should be respected.
-                return ColorParser.buildNick(byOnline, base);
+                MutableText replaced = ColorParser.buildNick(byOnline, base);
+                NickDisplayBuilder.appendServerColorMarker(replaced, byOnline, base);
+                return replaced;
             }
         }
 
@@ -516,7 +521,9 @@ public class ChatHudMixin {
                 Text nameOriginal = Text.literal(matchedName).setStyle(sectionStyle);
                 // Don't apply team color as fallback – the server's intended
                 // styling (e.g. gray names) should be respected.
-                out.append(ColorParser.buildNick(matched, nameOriginal));
+                MutableText replaced = ColorParser.buildNick(matched, nameOriginal);
+                NickDisplayBuilder.appendServerColorMarker(replaced, matched, nameOriginal);
+                out.append(replaced);
             }
 
             lastOriginal = toOriginal[m.end()];

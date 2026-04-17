@@ -33,7 +33,7 @@ public final class NickDisplayBuilder {
         return Text.literal(safeName);
     }
 
-    public static MutableText buildDisplay(NickEntry nick, Team team, MutableText nickComponent) {
+    public static MutableText buildDisplay(NickEntry nick, Team team, MutableText nickComponent, Text serverOriginalName) {
         MutableText full = Text.empty();
 
         if (team != null && nick.showPrefix) {
@@ -46,6 +46,8 @@ public final class NickDisplayBuilder {
             full.append(team.getSuffix());
         }
 
+        appendServerColorMarker(full, nick, serverOriginalName);
+
         if (StorageConfig.isShowIndicator()) {
             full.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));
         }
@@ -55,6 +57,25 @@ public final class NickDisplayBuilder {
 
     public static Text replaceInOriginalOrFallback(Text original, String currentName, NickEntry nick, Team team) {
         return replaceInOriginalOrFallback(original, currentName, nick, team, false);
+    }
+
+    public static boolean shouldShowServerColorMarker(NickEntry nick) {
+        return nick != null && (nick.rainbow || ColorParser.hasActualColorCodes(nick.nickname));
+    }
+
+    public static void appendServerColorMarker(MutableText target, NickEntry nick, Text serverOriginalName) {
+        if (target == null || !StorageConfig.isShowServerColorMarker() || !shouldShowServerColorMarker(nick)) return;
+
+        Style markerStyle = Style.EMPTY;
+        Style sourceStyle = extractFirstStyle(serverOriginalName);
+        if (sourceStyle != null && sourceStyle.getColor() != null) {
+            markerStyle = markerStyle.withColor(sourceStyle.getColor());
+        } else {
+            // Avoid inheriting the nick's custom color when no server color is available.
+            markerStyle = markerStyle.withColor(0xFFFFFF);
+        }
+
+        target.append(Text.literal(StorageConfig.SERVER_COLOR_MARKER).setStyle(markerStyle));
     }
 
     public static Text replaceInOriginalOrFallback(
@@ -76,7 +97,8 @@ public final class NickDisplayBuilder {
             boolean strictHideAffixesWhenDisabled
     ) {
         if (currentName == null || currentName.isBlank()) {
-            return buildDisplay(nick, team, ColorParser.buildNick(nick, Text.literal("")));
+            Text baseName = buildStyledBaseName("", original, team);
+            return buildDisplay(nick, team, ColorParser.buildNick(nick, baseName), baseName);
         }
 
         boolean allowMissingTeamAffixesFallback = !keepOriginalWhenNameNotFound;
@@ -96,7 +118,7 @@ public final class NickDisplayBuilder {
             if (strictHideAffixesWhenDisabled && (!nick.showPrefix || !nick.showSuffix)) {
                 Text baseName = buildStyledBaseName(currentName, original, team);
                 MutableText nickComponent = ColorParser.buildNick(nick, baseName);
-                return buildDisplay(nick, team, nickComponent);
+                return buildDisplay(nick, team, nickComponent, baseName);
             }
             return original;
         }
@@ -104,7 +126,7 @@ public final class NickDisplayBuilder {
         Text baseName = buildStyledBaseName(currentName, original, team);
         MutableText nickComponent = ColorParser.buildNick(nick, baseName);
 
-        return buildDisplay(nick, team, nickComponent);
+        return buildDisplay(nick, team, nickComponent, baseName);
     }
 
     private static Text replaceInsideOriginal(
@@ -178,6 +200,8 @@ public final class NickDisplayBuilder {
                 }
             }
         }
+
+        appendServerColorMarker(result, nick, baseName);
 
         if (StorageConfig.isShowIndicator()) {
             result.append(Text.literal(StorageConfig.INDICATOR).styled(s -> s.withColor(0xFFFF00)));

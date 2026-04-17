@@ -27,14 +27,18 @@ public class StorageConfig {
 
     private static StorageMode mode = StorageMode.GLOBAL;
     private static boolean showIndicator = false;
+    private static boolean showServerColorMarker = false;
 
     /** The indicator character appended to nicknames when the option is enabled. */
     public static final String INDICATOR = " \u270E"; // yellow pencil ✎
+    /** Marker that shows the original server name color when enabled. */
+    public static final String SERVER_COLOR_MARKER = " \u25A0";
 
     public static void load() {
         if (!SETTINGS_FILE.exists()) {
             mode = StorageMode.GLOBAL;
             showIndicator = false;
+            showServerColorMarker = false;
             return;
         }
 
@@ -51,9 +55,15 @@ public class StorageConfig {
             if (obj != null && obj.has("showIndicator")) {
                 showIndicator = obj.get("showIndicator").getAsBoolean();
             }
+            if (obj != null && obj.has("showServerColorMarker")) {
+                showServerColorMarker = obj.get("showServerColorMarker").getAsBoolean();
+            } else {
+                showServerColorMarker = false;
+            }
         } catch (Exception e) {
             mode = StorageMode.GLOBAL;
             showIndicator = false;
+            showServerColorMarker = false;
         }
     }
 
@@ -62,6 +72,7 @@ public class StorageConfig {
             JsonObject obj = new JsonObject();
             obj.addProperty("storageMode", mode.name());
             obj.addProperty("showIndicator", showIndicator);
+            obj.addProperty("showServerColorMarker", showServerColorMarker);
             GSON.toJson(obj, w);
         } catch (Exception e) {
             e.printStackTrace();
@@ -85,6 +96,16 @@ public class StorageConfig {
     public static void setShowIndicator(boolean value) {
         if (value == showIndicator) return;
         showIndicator = value;
+        save();
+    }
+
+    public static boolean isShowServerColorMarker() {
+        return showServerColorMarker;
+    }
+
+    public static void setShowServerColorMarker(boolean value) {
+        if (value == showServerColorMarker) return;
+        showServerColorMarker = value;
         save();
     }
 }
