@@ -203,7 +203,7 @@ public class EditEntryScreen extends Screen {
                                 // Username unchanged - just save under the same UUID
                                 entry.username = name;
                                 NickConfig.set(uuid, entry);
-                                Minecraft.getInstance().setScreen(parent);
+                                Minecraft.getInstance().gui.setScreen(parent);
                                 return;
                             }
 
@@ -213,14 +213,14 @@ public class EditEntryScreen extends Screen {
                                 entry.username = findOnlineExactName(name);
                                 NickConfig.remove(uuid);
                                 NickConfig.set(onlineUuid, entry);
-                                Minecraft.getInstance().setScreen(parent);
+                                Minecraft.getInstance().gui.setScreen(parent);
                                 return;
                             }
 
                             // Not online - try Mojang API (async)
                             MojangLookup.resolveByName(name).thenAccept(profile -> {
                                 Minecraft.getInstance().execute(() -> {
-                                    if (Minecraft.getInstance().screen != this) {
+                                    if (Minecraft.getInstance().gui.screen() != this) {
                                         return;
                                     }
                                     if (profile == null) {
@@ -230,7 +230,7 @@ public class EditEntryScreen extends Screen {
                                     entry.username = profile.name();
                                     NickConfig.remove(uuid);
                                     NickConfig.set(profile.uuid(), entry);
-                                    Minecraft.getInstance().setScreen(parent);
+                                    Minecraft.getInstance().gui.setScreen(parent);
                                 });
                             });
                         })
@@ -240,7 +240,7 @@ public class EditEntryScreen extends Screen {
 
         this.addRenderableWidget(
                 Button.builder(t("button.back"), b -> {
-                            Minecraft.getInstance().setScreen(parent);
+                            Minecraft.getInstance().gui.setScreen(parent);
                         })
                         .bounds(startX2 + btnW2 + gap2, yBottom2, btnW2, 20)
                         .build()
@@ -388,7 +388,7 @@ public class EditEntryScreen extends Screen {
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().setScreen(parent);
+        Minecraft.getInstance().gui.setScreen(parent);
     }
 
     private static Component t(String key, Object... args) {

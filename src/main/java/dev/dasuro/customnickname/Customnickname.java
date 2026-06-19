@@ -305,9 +305,9 @@ public class Customnickname implements ClientModInitializer {
         if (client.getWindow() == null) return;
 
         // Don't open a new instance if it's already open
-        if (client.screen instanceof CustomNickConfigScreen) return;
+        if (client.gui.screen() instanceof CustomNickConfigScreen) return;
 
-        client.setScreen(new CustomNickConfigScreen(client.screen));
+        client.gui.setScreen(new CustomNickConfigScreen(client.gui.screen()));
     }
 
     private static UUID findOnlineUuid(String name) {

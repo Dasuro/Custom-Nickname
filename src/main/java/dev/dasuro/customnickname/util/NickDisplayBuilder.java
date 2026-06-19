@@ -12,6 +12,7 @@ import net.minecraft.network.chat.contents.TranslatableContents;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 public final class NickDisplayBuilder {
 
@@ -26,8 +27,13 @@ public final class NickDisplayBuilder {
             return Component.literal(safeName).setStyle(sourceStyle);
         }
 
-        if (team != null && team.getColor() != null && team.getColor().getColor() != null) {
-            return Component.literal(safeName).withColor(team.getColor().getColor());
+        if (team != null) {
+            return team.getColor()
+                    .<MutableComponent>map(color ->
+                            Component.literal(safeName)
+                                    .withStyle(style -> style.withColor(color.textColor()))
+                    )
+                    .orElseGet(() -> Component.literal(safeName));
         }
 
         return Component.literal(safeName);
@@ -365,8 +371,12 @@ public final class NickDisplayBuilder {
         if (nameStyle != null && nameStyle != Style.EMPTY && nameStyle.getColor() != null) {
             color = nameStyle.getColor().getValue();
         }
-        if (color == null && team != null && team.getColor() != null && team.getColor().getColor() != null) {
-            color = team.getColor().getColor();
+        if (color == null && team != null) {
+            color = team.getColor()
+                    .map(teamColor -> teamColor.textColor())
+                    .filter(Objects::nonNull)
+                    .map(textColor -> textColor.getValue())
+                    .orElse(null);
         }
 
         MutableComponent marker = Component.literal(StorageConfig.SERVER_COLOR_MARKER);

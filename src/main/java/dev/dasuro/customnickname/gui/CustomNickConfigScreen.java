@@ -309,7 +309,7 @@ public class CustomNickConfigScreen extends Screen {
 
         MojangLookup.resolveByName(name).thenAccept(profile -> {
             Minecraft.getInstance().execute(() -> {
-                if (Minecraft.getInstance().screen != this) {
+                if (Minecraft.getInstance().gui.screen() != this) {
                     return;
                 }
                 if (profile == null) {
@@ -748,7 +748,7 @@ public class CustomNickConfigScreen extends Screen {
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().setScreen(parent);
+        Minecraft.getInstance().gui.setScreen(parent);
     }
 
     private static Component t(String key, Object... args) {
@@ -831,7 +831,7 @@ public class CustomNickConfigScreen extends Screen {
             this.entry = entry;
 
             this.editButton = Button.builder(t("button.edit"), b -> {
-                        Minecraft.getInstance().setScreen(
+                        Minecraft.getInstance().gui.setScreen(
                                 new EditEntryScreen(CustomNickConfigScreen.this, uuid)
                         );
                     })
