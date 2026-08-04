@@ -2,10 +2,14 @@ package dev.dasuro.customnickname.mixin;
 
 import dev.dasuro.customnickname.config.NickConfig;
 import dev.dasuro.customnickname.config.NickEntry;
+import dev.dasuro.customnickname.util.NickDisplayBuilder;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.entity.player.AvatarRenderer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.Avatar;
+import net.minecraft.world.scores.PlayerTeam;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -31,13 +35,17 @@ public class EntityRendererMixin {
         UUID uuid = player.getUUID();
         String currentName = player.getGameProfile().name();
 
-        // Auto-update the stored username if the player has renamed
         NickConfig.updateUsernameIfChanged(uuid, currentName);
 
         NickEntry nick = NickConfig.get(uuid);
         if (nick == null) return;
 
-        // 26.1.1 stores nametag text on EntityRenderState#nameTag.
-        state.nameTag = player.getDisplayName();
+        PlayerTeam team = player.getTeam();
+
+        MutableComponent originalNameTag = state.nameTag != null
+                ? state.nameTag.copy()
+                : Component.literal(currentName);
+
+        state.nameTag = NickDisplayBuilder.replaceInOriginalOrFallback(originalNameTag, currentName, nick, team, false, true);
     }
 }

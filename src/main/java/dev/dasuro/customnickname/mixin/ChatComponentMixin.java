@@ -92,18 +92,7 @@ public class ChatComponentMixin {
                 return NickConfig.get(senderUuid) != null;
             }
 
-            if (full == null || full.isBlank()) return false;
-
-            String cleaned = stripKnownMarkers(full).trim();
-            if (cleaned.isEmpty()) return false;
-
-            String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
-            String candidate = cleanedNoSection.replaceAll("[^A-Za-z0-9_]", "");
-            if (!candidate.isEmpty() && !cleanedNoSection.contains(" ")) {
-                return resolveNickByOnlineName(candidate) != null;
-            }
-
-            return false;
+            return resolveNickFromSenderText(full) != null;
         }
 
         if (arg instanceof String sArg) {
@@ -111,14 +100,7 @@ public class ChatComponentMixin {
                 return true;
             }
 
-            String cleaned = stripKnownMarkers(sArg).trim();
-            if (cleaned.isEmpty()) return false;
-
-            String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
-            String candidate = cleanedNoSection.replaceAll("[^A-Za-z0-9_]", "");
-            if (!candidate.isEmpty() && !cleanedNoSection.contains(" ")) {
-                return resolveNickByOnlineName(candidate) != null;
-            }
+            return resolveNickFromSenderText(sArg) != null;
         }
 
         return false;
@@ -184,6 +166,10 @@ public class ChatComponentMixin {
 
     @Unique
     private MutableComponent replaceNamesInTree(Component text) {
+        if (text == null) {
+            return Component.empty();
+        }
+
         return replaceNamesInTree(text, Style.EMPTY);
     }
 
@@ -195,6 +181,21 @@ public class ChatComponentMixin {
         // fragments we must use this so that "inherited gray" is not lost and
         // replaced with white (Style.EMPTY).
         Style effectiveStyle = resolveStyle(inheritedStyle, text.getStyle());
+
+        NickEntry wholeGradientName =
+                resolveConfiguredNickByExactName(text.getString());
+
+        if (wholeGradientName != null
+                && !customnickname$containsOwnMarkers(text)) {
+            return replaceWholeNameComponent(text, wholeGradientName, effectiveStyle);
+        }
+
+        MutableComponent directSiblingReplacement =
+                replaceGradientNameInDirectSiblings(text, effectiveStyle);
+
+        if (directSiblingReplacement != null) {
+            return directSiblingReplacement;
+        }
 
         // For nodes with interactive styles (ClickEvent / HoverEvent), we still
         // want to replace names but must preserve the interactive events on the
@@ -333,75 +334,35 @@ public class ChatComponentMixin {
 
     @Unique
     private MutableComponent replacePlayerNameArgumentIfExact(Component tArg, Style inheritedStyle) {
+        if (customnickname$containsOwnMarkers(tArg)) {
+            return asMutable(tArg);
+        }
 
-        String full = tArg.getString();
-        if (full == null || full.isBlank()) return asMutable(tArg);
-
-        // Prefer UUID-based sender resolution when available (stable against display-name rewrites).
         UUID senderUuid = extractEntityUuid(tArg);
         if (senderUuid != null) {
             NickEntry entry = NickConfig.get(senderUuid);
             if (entry != null) {
-                Style effectiveStyle = resolveStyle(inheritedStyle, tArg.getStyle());
-                String cleaned = full.replace(StorageConfig.INDICATOR, "")
-                                     .replace(StorageConfig.INDICATOR.trim(), "")
-                                     .replace(StorageConfig.SERVER_COLOR_MARKER, "")
-                                     .replace(StorageConfig.SERVER_COLOR_MARKER.trim(), "")
-                                     .trim();
-                if (cleaned.isEmpty()) return asMutable(tArg);
-
-                Style nameStyle = parseSectionCodesForStyle(cleaned, effectiveStyle);
-                String nameText = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
-                MutableComponent base = Component.literal(nameText).setStyle(nameStyle);
-                MutableComponent replaced = ColorParser.buildNick(entry, base);
-                NickDisplayBuilder.appendServerColorMarker(replaced, entry, base, null);
-                return replaced;
+                return replaceExactSenderComponent(tArg, entry);
             }
-            // UUID found but no config entry: keep original argument untouched.
             return asMutable(tArg);
         }
 
-        // Strip any indicator that other mixins may have appended (e.g. " ✎")
-        String cleaned = stripKnownMarkers(full).trim();
-        if (cleaned.isEmpty()) return asMutable(tArg);
-
-        // Also strip §-formatting codes so names are recognised even when the
-        // server sends "§aUsername§7: text" style messages.
-        String cleanedNoSection = SECTION_CODE_PATTERN.matcher(cleaned).replaceAll("");
-
-        // Resolve effective style for this argument
-        Style effectiveStyle = resolveStyle(inheritedStyle, tArg.getStyle());
-
-        // Try 0: If the argument has siblings (e.g. laby.net sends
-        // empty[siblings=[literal{Name}[color=X], literal{: }[color=Y], literal{msg}[color=Z]]]),
-        // use recursive tree replacement so each sibling keeps its own style.
-        // This avoids flattening the text and losing per-sibling colors.
-        if (!tArg.getSiblings().isEmpty()) {
-            MutableComponent treeResult = replaceNamesInTree(tArg, inheritedStyle);
-            if (treeResult != tArg) {
-                return treeResult;
-            }
+        NickEntry byVisibleName = resolveNickFromSenderText(tArg.getString());
+        if (byVisibleName != null) {
+            return replaceExactSenderComponent(tArg, byVisibleName);
         }
 
-        // Try 1: exact single-word match (simple case, e.g. just "Dasuro")
-        String candidate = cleanedNoSection.replaceAll("[^A-Za-z0-9_]", "");
-        if (!candidate.isEmpty() && !cleanedNoSection.contains(" ")) {
-            NickEntry byOnline = resolveNickByOnlineName(candidate);
-            if (byOnline != null) {
-                // Parse any §-codes in 'cleaned' to determine the style that
-                // should apply to the name.  E.g. "§7PlayerName" → style = gray.
-                Style nameStyle = parseSectionCodesForStyle(cleaned, effectiveStyle);
-                MutableComponent base = Component.literal(candidate).setStyle(nameStyle);
-                // Don't apply team color as fallback – the server's intended
-                // styling (e.g. gray names) should be respected.
-                MutableComponent replaced = ColorParser.buildNick(byOnline, base);
-                NickDisplayBuilder.appendServerColorMarker(replaced, byOnline, base, null);
-                return replaced;
-            }
+        String full = tArg.getString();
+        if (full == null || full.isBlank()) return asMutable(tArg);
+
+        String cleaned = normalizePossiblePlayerName(full);
+        if (cleaned == null) return asMutable(tArg);
+
+        NickEntry byOnline = resolveNickByOnlineName(cleaned);
+        if (byOnline != null) {
+            return replaceExactSenderComponent(tArg, byOnline);
         }
 
-        // For sender argument, avoid broad one-pass fallback to prevent
-        // accidental remaps when display names are already modified elsewhere.
         return asMutable(tArg);
     }
 
@@ -428,35 +389,190 @@ public class ChatComponentMixin {
         return null;
     }
 
-    /** Matches a single Minecraft §-formatting code (§ + one character). */
-    @Unique
-    private static final Pattern SECTION_CODE_PATTERN = Pattern.compile("§[0-9a-fk-orA-FK-OR]");
-
     /**
-     * Parses all §-codes in the given raw string and returns the style that
-     * results from applying them sequentially on top of the given base style.
-     * This is used to determine the correct color for a player name when the
-     * server prepends §-codes (e.g. "§7PlayerName").
-     */
+     * Matches either a full hex color sequence (§x§R§R§G§G§B§B)
+     * or a single legacy formatting code (§ + one character). */
     @Unique
-    private Style parseSectionCodesForStyle(String raw, Style baseStyle) {
-        if (raw == null || raw.indexOf('§') == -1) return baseStyle;
-        Style current = baseStyle;
-        for (int i = 0; i < raw.length() - 1; i++) {
-            if (raw.charAt(i) == '§') {
-                char code = Character.toLowerCase(raw.charAt(i + 1));
-                if ((code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')
-                        || (code >= 'k' && code <= 'o') || code == 'r') {
-                    current = applyLegacyCode(current, code);
-                    i++; // skip the code character
-                }
+    private static final Pattern SECTION_CODE_PATTERN = Pattern.compile("(?i)§x(§[0-9a-f]){6}|§[0-9a-fk-or]");
+
+    @Unique
+    private boolean isLegacySectionCode(char code) {
+        return (code >= '0' && code <= '9') || (code >= 'a' && code <= 'f') || (code >= 'k' && code <= 'o') || code == 'r';
+    }
+
+    @Unique
+    private boolean isHexDigit(char c) {
+        char lower = Character.toLowerCase(c);
+        return (lower >= '0' && lower <= '9') || (lower >= 'a' && lower <= 'f');
+    }
+
+    @Unique
+    private int parseHexColorAt(String raw, int index) {
+        if (raw == null || index < 0 || index + 13 >= raw.length()) return -1;
+        if (raw.charAt(index) != '§') return -1;
+        if (Character.toLowerCase(raw.charAt(index + 1)) != 'x') return -1;
+
+        StringBuilder hex = new StringBuilder(6);
+        for (int off = 2; off < 14; off += 2) {
+            if (raw.charAt(index + off) != '§') return -1;
+            char digit = raw.charAt(index + off + 1);
+            if (!isHexDigit(digit)) return -1;
+            hex.append(digit);
+        }
+        try {
+            return Integer.parseInt(hex.toString(), 16);
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
+    @Unique
+    private String stripSectionCodes(String text) {
+        if (text == null || text.isEmpty()) return "";
+        return SECTION_CODE_PATTERN.matcher(text).replaceAll("");
+    }
+
+    @Unique
+    private String normalizePossiblePlayerName(String text) {
+        if (text == null || text.isBlank()) return null;
+        String cleaned = stripKnownMarkers(text).trim();
+        if (cleaned.isEmpty()) return null;
+        String withoutSections = stripSectionCodes(cleaned).trim();
+        if (withoutSections.isEmpty()) return null;
+        if (withoutSections.indexOf(' ') >= 0) return null;
+        for (int i = 0; i < withoutSections.length(); i++) {
+            char c = withoutSections.charAt(i);
+            if (!Character.isLetterOrDigit(c) && c != '_') {
+                return null;
             }
         }
-        return current;
+        return withoutSections;
+    }
+
+    @Unique
+    private NickEntry resolveNickFromSenderText(String text) {
+        String candidate = normalizePossiblePlayerName(text);
+        return candidate != null ? resolveNickByOnlineName(candidate) : null;
+    }
+
+    @Unique
+    private MutableComponent replaceExactSenderComponent(
+            Component original,
+            NickEntry entry
+    ) {
+        if (original == null || entry == null) {
+            return asMutable(original);
+        }
+
+        String fullName = original.getString();
+        String currentName = normalizePossiblePlayerName(fullName);
+
+        /*
+         * A normal channel name or one formatted using a JSON gradient appears as
+         * complete, visible text despite
+         * many child components:
+         *
+         * original.getString() -> “Dasuro”
+         *
+         * Therefore, replace the entire channel name instead of searching for
+         * “Dasuro” within the old component tree.
+         */
+        if (currentName != null && !currentName.isBlank()) {
+            MutableComponent originalName = Component.literal(currentName)
+                    .setStyle(original.getStyle());
+
+            MutableComponent nick = ColorParser.buildNick(entry, originalName);
+            NickDisplayBuilder.appendServerColorMarker(nick, entry, originalName, null);
+
+            /*
+             * Hover, click, and other styles from the original sender
+             * are preserved in the wrapper.
+             */
+            MutableComponent wrapper = Component.empty()
+                    .setStyle(original.getStyle());
+            wrapper.append(nick);
+
+            return wrapper;
+        }
+
+        /*
+         * Only if the sender is not a single MC name—for example, due to a prefix or
+         * suffix—will your existing fallback remain in place.
+         */
+
+        String fallbackName = entry.username;
+        if (fallbackName == null || fallbackName.isBlank()) {
+            return asMutable(original);
+        }
+
+        MutableComponent replaced = NickDisplayBuilder.replaceInOriginalOrFallback(asMutable(original), fallbackName, entry, null, true, true);
+
+        return replaced != null ? replaced : asMutable(original);
+    }
+
+    @Unique
+    private NickEntry resolveConfiguredNickByExactName(String text) {
+        String name = normalizePossiblePlayerName(text);
+
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+
+        for (NickEntry entry : NickConfig.getAll().values()) {
+            if (entry == null || entry.username == null) {
+                continue;
+            }
+
+            if (entry.username.equalsIgnoreCase(name)) {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
+    @Unique
+    private MutableComponent replaceWholeNameComponent(Component original, NickEntry entry, Style effectiveStyle) {
+        String visibleName = normalizePossiblePlayerName(original.getString());
+
+        if (visibleName == null || visibleName.isBlank()) {
+            return asMutable(original);
+        }
+
+        /*
+         * Important:
+         * Do not use Component.literal(visibleName).setStyle(effectiveStyle).
+         *
+         * The original Component contains the individual characters of the
+         * server gradient and their colors. ColorParser can retrieve these colors using
+         * extractStyledChars(...) and scale them to fit the nickname.
+         */
+        MutableComponent serverOriginalName = original.copy();;
+
+        if (serverOriginalName.getStyle().equals(Style.EMPTY)) {
+            serverOriginalName.setStyle(effectiveStyle);
+        }
+
+        MutableComponent nick = ColorParser.buildNick(entry, serverOriginalName);
+
+        NickDisplayBuilder.appendServerColorMarker(nick, entry, serverOriginalName, null);
+
+        Style originalStyle = original.getStyle();
+
+        if (originalStyle != null
+                && (originalStyle.getClickEvent() != null
+                || originalStyle.getHoverEvent() != null)) {
+            return Component.empty()
+                    .setStyle(originalStyle)
+                    .append(nick);
+        }
+
+        return nick;
     }
 
     @Unique
     private MutableComponent replaceConfiguredNamesOnePass(String raw, Style effectiveStyle) {
+        if (customnickname$containsOwnMarkers(raw)) return null;
         if (raw == null || raw.isEmpty()) return null;
 
         Collection<NickEntry> entries = NickConfig.getAll().values();
@@ -558,11 +674,14 @@ public class ChatComponentMixin {
         int si = 0; // stripped index
         int oi = 0; // original index
         while (oi < raw.length()) {
+            if (parseHexColorAt(raw, oi) >= 0) {
+                oi += 14;
+                continue;
+            }
             if (oi + 1 < raw.length() && raw.charAt(oi) == '§') {
                 char code = Character.toLowerCase(raw.charAt(oi + 1));
-                if ((code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')
-                        || (code >= 'k' && code <= 'o') || code == 'r') {
-                    oi += 2; // skip the §-code
+                if (isLegacySectionCode(code)) {
+                    oi += 2;
                     continue;
                 }
             }
@@ -630,18 +749,28 @@ public class ChatComponentMixin {
         StringBuilder buf = new StringBuilder();
         int i = 0;
         while (i < raw.length()) {
-            if (i + 1 < raw.length() && raw.charAt(i) == '§') {
-                char code = Character.toLowerCase(raw.charAt(i + 1));
-                if ((code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')
-                        || (code >= 'k' && code <= 'o') || code == 'r') {
-                    // Flush buffered text with the current style
+            if (raw.charAt(i) == '§') {
+                int hexColor = parseHexColorAt(raw, i);
+                if (hexColor >= 0) {
                     if (!buf.isEmpty()) {
                         out.append(Component.literal(buf.toString()).setStyle(current));
                         buf.setLength(0);
                     }
-                    current = applyLegacyCode(current, code);
-                    i += 2;
+                    current = current.withColor(TextColor.fromRgb(hexColor));
+                    i += 14;
                     continue;
+                }
+                if (i + 1 < raw.length()) {
+                    char code = Character.toLowerCase(raw.charAt(i + 1));
+                    if (isLegacySectionCode(code)) {
+                        if (!buf.isEmpty()) {
+                            out.append(Component.literal(buf.toString()).setStyle(current));
+                            buf.setLength(0);
+                        }
+                        current = applyLegacyCode(current, code);
+                        i += 2;
+                        continue;
+                    }
                 }
             }
             buf.append(raw.charAt(i));
@@ -752,5 +881,323 @@ public class ChatComponentMixin {
             rebuilt.append(s);
         }
         return rebuilt;
+    }
+
+    @Unique
+    private boolean customnickname$containsOwnMarkers(Component text) {
+        return text != null && customnickname$containsOwnMarkers(text.getString());
+    }
+
+    @Unique
+    private boolean customnickname$containsOwnMarkers(String text) {
+        if (text == null || text.isEmpty()) return false;
+
+        String indicator = StorageConfig.INDICATOR;
+        if (indicator != null && !indicator.isBlank()) {
+            String trimmed = indicator.trim();
+            if (!trimmed.isEmpty() && text.contains(trimmed)) {
+                return true;
+            }
+        }
+
+        String marker = StorageConfig.SERVER_COLOR_MARKER;
+        if (marker != null && !marker.isBlank()) {
+            String trimmed = marker.trim();
+            if (!trimmed.isEmpty() && text.contains(trimmed)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    @Unique
+    private MutableComponent replaceGradientNameInDirectSiblings(Component parent, Style inheritedStyle) {
+        if (parent == null
+                || customnickname$containsOwnMarkers(parent)
+                || containsLegacyFormatting(parent)) {
+            return null;
+        }
+
+        List<Component> siblings = parent.getSiblings();
+
+        if (siblings.isEmpty()) {
+            return null;
+        }
+
+        List<DirectTextPiece> pieces = new ArrayList<>();
+        StringBuilder visibleText = new StringBuilder();
+
+        for (Component sibling : siblings) {
+            if (!collectFlatTextPieces(
+                    sibling,
+                    inheritedStyle,
+                    pieces,
+                    visibleText
+            )) {
+                return null;
+            }
+        }
+
+        if (visibleText.isEmpty()) {
+            return null;
+        }
+
+        List<NickEntry> entries = new ArrayList<>(NickConfig.getAll().values());
+
+        entries.removeIf(entry ->
+                entry == null
+                        || entry.username == null
+                        || entry.username.isBlank()
+        );
+
+        if (entries.isEmpty()) {
+            return null;
+        }
+
+        entries.sort(
+                Comparator.comparingInt(
+                        (NickEntry entry) -> entry.username.length()
+                ).reversed()
+        );
+
+        String visible = visibleText.toString();
+        List<DirectGradientMatch> matches = new ArrayList<>();
+
+        int cursor = 0;
+
+        while (cursor < visible.length()) {
+            NickEntry matchedEntry = null;
+            int matchedEnd = -1;
+
+            for (NickEntry entry : entries) {
+                String username = entry.username;
+                int end = cursor + username.length();
+
+                if (end > visible.length()) {
+                    continue;
+                }
+
+                if (!visible.regionMatches(true, cursor, username, 0, username.length())) {
+                    continue;
+                }
+
+                if (!isNameBoundary(visible, cursor, end)) {
+                    continue;
+                }
+
+                matchedEntry = entry;
+                matchedEnd = end;
+                break;
+            }
+
+            if (matchedEntry != null) {
+                matches.add(new DirectGradientMatch(cursor, matchedEnd, matchedEntry));
+
+                cursor = matchedEnd;
+            } else {
+                cursor++;
+            }
+        }
+
+        if (matches.isEmpty()) {
+            return null;
+        }
+
+        MutableComponent rebuilt = parent.plainCopy()
+                .setStyle(parent.getStyle());
+
+        int previousEnd = 0;
+
+        for (DirectGradientMatch match : matches) {
+            appendDirectRange(
+                    rebuilt,
+                    pieces,
+                    previousEnd,
+                    match.start(),
+                    inheritedStyle
+            );
+
+            // Den ursprünglichen Namen mitsamt den einzelnen Server-Farben
+            // zusammensetzen. ColorParser kann daraus den Verlauf übernehmen.
+            MutableComponent originalGradientName = Component.empty();
+
+            for (DirectTextPiece piece : pieces) {
+                boolean overlaps = match.start() < piece.end()
+                        && match.end() > piece.start();
+
+                if (!overlaps) {
+                    continue;
+                }
+
+                int partStart = Math.max(piece.start(), match.start());
+                int partEnd = Math.min(piece.end(), match.end());
+
+                if (partStart < partEnd) {
+                    originalGradientName.append(
+                            copyDirectTextRange(piece, partStart, partEnd)
+                    );
+                }
+            }
+
+            MutableComponent nickname = ColorParser.buildNick(
+                    match.entry(),
+                    originalGradientName
+            );
+
+            NickDisplayBuilder.appendServerColorMarker(
+                    nickname,
+                    match.entry(),
+                    originalGradientName,
+                    null
+            );
+
+            rebuilt.append(nickname);
+
+            previousEnd = match.end();
+        }
+
+        appendDirectRange(
+                rebuilt,
+                pieces,
+                previousEnd,
+                visible.length(),
+                inheritedStyle
+        );
+
+        return rebuilt;
+    }
+
+    @Unique
+    private boolean collectFlatTextPieces(
+            Component component,
+            Style inheritedStyle,
+            List<DirectTextPiece> pieces,
+            StringBuilder visibleText
+    ) {
+        if (!(component.getContents() instanceof PlainTextContents plain)) {
+            return false;
+        }
+
+        Style effectiveStyle = resolveStyle(
+                inheritedStyle,
+                component.getStyle()
+        );
+
+        String ownText = plain.text();
+
+        if (!ownText.isEmpty()) {
+            int start = visibleText.length();
+
+            visibleText.append(ownText);
+
+            int end = visibleText.length();
+
+            pieces.add(new DirectTextPiece(ownText, start, end, effectiveStyle));
+        }
+
+        for (Component sibling : component.getSiblings()) {
+            if (!collectFlatTextPieces(sibling, effectiveStyle, pieces, visibleText)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    @Unique
+    private void appendDirectRange(
+            MutableComponent out,
+            List<DirectTextPiece> pieces,
+            int start,
+            int end,
+            Style inheritedStyle
+    ) {
+        if (start >= end) {
+            return;
+        }
+
+        for (DirectTextPiece piece : pieces) {
+            boolean overlaps = start < piece.end() && end > piece.start();
+
+            if (!overlaps) {
+                continue;
+            }
+
+            int partStart = Math.max(start, piece.start());
+            int partEnd = Math.min(end, piece.end());
+
+            if (partStart < partEnd) {
+                out.append(copyDirectTextRange(piece, partStart, partEnd));
+            }
+        }
+    }
+
+    @Unique
+    private MutableComponent copyDirectTextRange(
+            DirectTextPiece piece,
+            int absoluteStart,
+            int absoluteEnd
+    ) {
+        int localStart = absoluteStart - piece.start();
+        int localEnd = absoluteEnd - piece.start();
+
+        localStart = Math.max(
+                0,
+                Math.min(localStart, piece.text().length())
+        );
+        localEnd = Math.max(
+                localStart,
+                Math.min(localEnd, piece.text().length())
+        );
+
+        return Component.literal(
+                piece.text().substring(localStart, localEnd)
+        ).setStyle(piece.style());
+    }
+
+    @Unique
+    private record DirectTextPiece(String text, int start, int end, Style style) { }
+
+    @Unique
+    private record DirectGradientMatch(int start, int end, NickEntry entry) { }
+
+    @Unique
+    private boolean isNameBoundary(String text, int start, int end) {
+        boolean validBefore = start == 0
+                || !isMinecraftNameCharacter(text.charAt(start - 1));
+
+        boolean validAfter = end >= text.length()
+                || !isMinecraftNameCharacter(text.charAt(end));
+
+        return validBefore && validAfter;
+    }
+
+    @Unique
+    private boolean isMinecraftNameCharacter(char character) {
+        return (character >= 'A' && character <= 'Z')
+                || (character >= 'a' && character <= 'z')
+                || (character >= '0' && character <= '9')
+                || character == '_';
+    }
+
+    @Unique
+    private boolean containsLegacyFormatting(Component component) {
+        if (component == null) {
+            return false;
+        }
+
+        if (component.getContents() instanceof PlainTextContents plain
+                && plain.text().indexOf('§') >= 0) {
+            return true;
+        }
+
+        for (Component sibling : component.getSiblings()) {
+            if (containsLegacyFormatting(sibling)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

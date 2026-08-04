@@ -9,6 +9,7 @@ A client-side Fabric mod that lets you assign custom nicknames to any player. Ni
 - **Rainbow Wave Effect** — Apply an animated rainbow wave to any nickname with adjustable speed
 - **Team Prefix/Suffix Toggle** — Choose whether to show or hide scoreboard team prefixes and suffixes per player
 - **Nickname Indicator** — Optional ✎ indicator appended to nicknames so you can tell them apart from real names
+- **Server Color Marker** — Optional marker to indicate a users real username color in the nickname
 - **Global & Local Storage** — Store nicknames globally (shared across all instances) or locally (per modpack)
 - **In-Game Config GUI** — Tabbed configuration screen with Add, Nicknames, and Options tabs (accessible via Mod Menu or keybind)
 - **Live Preview** — See how your nickname will look before saving
@@ -25,7 +26,7 @@ A client-side Fabric mod that lets you assign custom nicknames to any player. Ni
 
 ## Requirements
 
-- [Fabric Loader](https://fabricmc.net/) `>= 0.18.4`
+- [Fabric Loader](https://fabricmc.net/) `>= 0.19.3`
 - [Fabric API](https://modrinth.com/mod/fabric-api)
 - [Mod Menu](https://modrinth.com/mod/modmenu)
 

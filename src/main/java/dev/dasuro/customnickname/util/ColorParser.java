@@ -1,12 +1,17 @@
 package dev.dasuro.customnickname.util;
 
 import dev.dasuro.customnickname.config.NickEntry;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
-import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.network.chat.contents.PlainTextContents;
+import net.minecraft.network.chat.contents.TranslatableContents;
 
-import java.util.regex.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ColorParser {
 
@@ -25,28 +30,49 @@ public class ColorParser {
     );
 
     /** Matches a trailing, incomplete hex color introducer that can happen while typing/pasting. */
-    private static final Pattern TRAILING_INCOMPLETE_HEX = Pattern.compile("&#[0-9A-Fa-f]{0,5}$");
+    private static final Pattern TRAILING_INCOMPLETE_HEX = Pattern.compile(
+            "&#[0-9A-Fa-f]{0,5}$"
+    );
 
-    public static MutableComponent buildNick(NickEntry nick, MutableComponent serverOriginal) {
+    /** Number of characters for one full rainbow cycle. */
+    private static final double RAINBOW_WAVELENGTH = 20.0;
+
+    /**
+     * A single visible character together with its style.
+     * For rainbow parsing this style contains only formatting.
+     * For extracted server text it contains the full effective style.
+     */
+    private record StyledChar(String character, Style style) {
+    }
+
+    public static MutableComponent buildNick(
+            NickEntry nick,
+            MutableComponent serverOriginal
+    ) {
         if (nick == null) return Component.empty();
 
         String nickname = nick.nickname;
         if (nickname == null) nickname = "";
 
         if (nick.rainbow) {
-            // Parse formatting codes to preserve bold/italic/etc., but ignore colors
-            java.util.List<StyledChar> chars = parseToStyledChars(nickname);
+            List<StyledChar> chars = parseToStyledChars(nickname);
             return rainbowWave(chars, System.currentTimeMillis(), nick.rainbowSpeed);
         }
-        if (hasActualColorCodes(nickname)) return parse(nickname);
-        if (hasFormattingOnlyCodes(nickname)) return parseWithOriginalColor(nickname, serverOriginal);
+
+        if (hasActualColorCodes(nickname)) {
+            return parse(nickname);
+        }
+
+        if (hasFormattingOnlyCodes(nickname)) {
+            return parseWithOriginalColor(nickname, serverOriginal);
+        }
+
         return applyOriginalStyle(nickname, serverOriginal);
     }
 
     public static MutableComponent parse(String input) {
         if (input == null || input.isEmpty()) return Component.empty();
 
-        // If someone is mid-typing or pasted a cut-off hex code, drop the incomplete tail.
         input = TRAILING_INCOMPLETE_HEX.matcher(input).replaceAll("");
 
         MutableComponent result = Component.empty();
@@ -57,22 +83,19 @@ public class ColorParser {
         while (matcher.find()) {
             if (matcher.start() > lastEnd) {
                 result.append(
-                        Component.literal(
-                                input.substring(lastEnd, matcher.start())
-                        ).setStyle(currentStyle)
+                        Component.literal(input.substring(lastEnd, matcher.start()))
+                                .setStyle(currentStyle)
                 );
             }
+
             if (matcher.group(1) != null) {
                 int rgb = Integer.parseInt(matcher.group(1), 16);
-                currentStyle = currentStyle.withColor(
-                        TextColor.fromRgb(rgb)
-                );
+                currentStyle = currentStyle.withColor(TextColor.fromRgb(rgb));
             } else {
-                char code = Character.toLowerCase(
-                        matcher.group(2).charAt(0)
-                );
+                char code = Character.toLowerCase(matcher.group(2).charAt(0));
                 currentStyle = applyLegacy(currentStyle, code);
             }
+
             lastEnd = matcher.end();
         }
 
@@ -82,116 +105,77 @@ public class ColorParser {
                             .setStyle(currentStyle)
             );
         }
+
         return result;
     }
 
-
-    /** Number of characters for one full rainbow cycle. */
-    private static final double RAINBOW_WAVELENGTH = 20.0;
-
-    /**
-     * A single visible character together with its non-color style
-     * (bold, italic, underline, strikethrough, obfuscated).
-     */
-    private record StyledChar(String character, Style baseStyle) {}
-
     /**
      * Parses formatting codes from the nickname and returns one StyledChar per
-     * visible character.  Color codes (&amp;0-f, &amp;#RRGGBB) are stripped because the
-     * rainbow supplies its own color, but formatting codes (&amp;l, &amp;o, &amp;n, &amp;m, &amp;k)
-     * are kept.  &amp;r resets only the formatting flags (not relevant for color
-     * since rainbow overrides it anyway).
+     * visible character. Color codes are ignored because rainbow or server-color
+     * fallback provides the color; formatting codes are preserved.
      */
-    private static java.util.List<StyledChar> parseToStyledChars(String input) {
-        java.util.List<StyledChar> result = new java.util.ArrayList<>();
+    private static List<StyledChar> parseToStyledChars(String input) {
+        List<StyledChar> result = new ArrayList<>();
         if (input == null || input.isEmpty()) return result;
 
-        // Remove trailing incomplete hex codes
         input = TRAILING_INCOMPLETE_HEX.matcher(input).replaceAll("");
 
         Matcher matcher = CODE_PATTERN.matcher(input);
         int lastEnd = 0;
-        // Only track non-color formatting
         Style formatting = Style.EMPTY;
 
         while (matcher.find()) {
-            // Collect visible characters before this code
             if (matcher.start() > lastEnd) {
-                String segment = input.substring(lastEnd, matcher.start());
-                int[] cps = segment.codePoints().toArray();
-                for (int cp : cps) {
-                    result.add(new StyledChar(new String(Character.toChars(cp)), formatting));
-                }
+                appendCodePointChars(
+                        input.substring(lastEnd, matcher.start()),
+                        formatting,
+                        result
+                );
             }
 
             if (matcher.group(1) == null) {
-                // Legacy code (not hex) – check for formatting vs color
                 char code = Character.toLowerCase(matcher.group(2).charAt(0));
                 if (code == 'r') {
-                    // Reset: clear all formatting
                     formatting = Style.EMPTY;
                 } else if (isFormattingCode(code)) {
-                    // Formatting code (bold, italic, etc.) – apply
                     formatting = applyFormattingOnly(formatting, code);
                 }
-                // Legacy color codes (0-9, a-f) are ignored for rainbow
             }
-            // Hex color codes are also ignored for rainbow
+
             lastEnd = matcher.end();
         }
 
-        // Remaining visible characters after last code
         if (lastEnd < input.length()) {
-            String tail = input.substring(lastEnd);
-            int[] cps = tail.codePoints().toArray();
-            for (int cp : cps) {
-                result.add(new StyledChar(new String(Character.toChars(cp)), formatting));
-            }
+            appendCodePointChars(input.substring(lastEnd), formatting, result);
         }
 
         return result;
     }
 
-    /** Returns true for formatting (non-color) legacy codes: l, o, n, m, k. */
-    private static boolean isFormattingCode(char code) {
-        return code == 'l' || code == 'o' || code == 'n' || code == 'm' || code == 'k';
-    }
-
-    /** Applies only formatting flags (bold, italic, etc.) to the style. */
-    private static Style applyFormattingOnly(Style style, char code) {
-        return switch (code) {
-            case 'l' -> style.withBold(true);
-            case 'o' -> style.withItalic(true);
-            case 'n' -> style.withUnderlined(true);
-            case 'm' -> style.withStrikethrough(true);
-            case 'k' -> style.withObfuscated(true);
-            default  -> style;
-        };
-    }
-
     /**
      * Builds a rainbow-wave text from pre-parsed styled characters.
-     * Each character keeps its formatting (bold, italic, etc.) but gets
-     * its color from the rainbow wave.
+     * Each character keeps its formatting but gets its color from the rainbow.
      */
-    private static MutableComponent rainbowWave(java.util.List<StyledChar> chars, long timeMs, float speed) {
+    private static MutableComponent rainbowWave(
+            List<StyledChar> chars,
+            long timeMs,
+            float speed
+    ) {
         MutableComponent result = Component.empty();
         if (chars == null || chars.isEmpty()) return result;
 
         int len = chars.size();
-
-        // Time-based offset – negative so the wave travels right → left
         double offset = -(timeMs / 1000.0) * speed * 0.25;
 
         for (int i = 0; i < len; i++) {
             double hue = (i / RAINBOW_WAVELENGTH + offset) % 1.0;
             if (hue < 0) hue += 1.0;
 
-            int rgb = java.awt.Color.HSBtoRGB((float) hue, 1.0f, 1.0f) & 0xFFFFFF;
+            int rgb = java.awt.Color.HSBtoRGB((float) hue, 1.0f, 1.0f)
+                    & 0xFFFFFF;
 
             StyledChar sc = chars.get(i);
-            // Start from the character's formatting style, then apply rainbow color
-            Style style = sc.baseStyle().withColor(TextColor.fromRgb(rgb));
+            Style style = sc.style().withColor(TextColor.fromRgb(rgb));
 
             result.append(Component.literal(sc.character()).setStyle(style));
         }
@@ -203,8 +187,22 @@ public class ColorParser {
             String newText,
             MutableComponent original
     ) {
-        Style style = extractFirstStyle(original);
-        return Component.literal(newText).setStyle(style);
+        if (newText == null || newText.isEmpty()) return Component.empty();
+
+        List<String> targetChars = splitVisibleChars(newText);
+        if (targetChars.isEmpty()) return Component.empty();
+
+        List<StyledChar> sourceChars = extractStyledChars(original);
+
+        MutableComponent result = Component.empty();
+        for (int i = 0; i < targetChars.size(); i++) {
+            Style mapped = mapOriginalStyle(sourceChars, i, targetChars.size());
+            result.append(
+                    Component.literal(targetChars.get(i)).setStyle(mapped)
+            );
+        }
+
+        return result;
     }
 
     public static boolean hasColorCodes(String input) {
@@ -225,67 +223,353 @@ public class ColorParser {
     }
 
     /**
-     * Parses formatting codes (bold, italic, etc.) and &amp;r resets from the nickname,
-     * but keeps the original player color from the server. This is used when the
-     * nickname contains only formatting codes and no explicit color codes.
+     * Parses formatting codes (&l, &o, ...) from the nickname, but keeps the
+     * server color / gradient from the original player name.
      */
-    public static MutableComponent parseWithOriginalColor(String input, MutableComponent serverOriginal) {
+    public static MutableComponent parseWithOriginalColor(
+            String input,
+            MutableComponent serverOriginal
+    ) {
         if (input == null || input.isEmpty()) return Component.empty();
 
-        Style originalStyle = extractFirstStyle(serverOriginal);
+        List<StyledChar> nicknameChars = parseToStyledChars(input);
+        if (nicknameChars.isEmpty()) return Component.empty();
 
-        // Remove trailing incomplete hex codes
-        input = TRAILING_INCOMPLETE_HEX.matcher(input).replaceAll("");
+        List<StyledChar> sourceChars = extractStyledChars(serverOriginal);
 
         MutableComponent result = Component.empty();
-        Matcher matcher = CODE_PATTERN.matcher(input);
-        int lastEnd = 0;
-        // Start with the original style (preserves color from the server)
-        Style currentStyle = originalStyle;
+        for (int i = 0; i < nicknameChars.size(); i++) {
+            StyledChar nickChar = nicknameChars.get(i);
+            Style originalMapped = mapOriginalStyle(
+                    sourceChars,
+                    i,
+                    nicknameChars.size()
+            );
+            Style merged = overlayFormatting(originalMapped, nickChar.style());
 
-        while (matcher.find()) {
-            if (matcher.start() > lastEnd) {
-                result.append(
-                        Component.literal(
-                                input.substring(lastEnd, matcher.start())
-                        ).setStyle(currentStyle)
-                );
-            }
-            if (matcher.group(2) != null) {
-                char code = Character.toLowerCase(matcher.group(2).charAt(0));
-                if (code == 'r') {
-                    // Reset: go back to the original style (not Style.EMPTY)
-                    currentStyle = originalStyle;
-                } else if (isFormattingCode(code)) {
-                    currentStyle = applyFormattingOnly(currentStyle, code);
-                }
-                // Ignore color codes here (shouldn't be present, but just in case)
-            }
-            lastEnd = matcher.end();
-        }
-
-        if (lastEnd < input.length()) {
             result.append(
-                    Component.literal(input.substring(lastEnd))
-                            .setStyle(currentStyle)
+                    Component.literal(nickChar.character()).setStyle(merged)
             );
         }
+
         return result;
     }
 
     public static String strip(String input) {
         if (input == null || input.isEmpty()) return "";
         return input.replaceAll(
-                "&#[0-9A-Fa-f]{6}|&[0-9a-fk-orA-FK-OR]", ""
+                "&#[0-9A-Fa-f]{6}|&[0-9a-fk-orA-FK-OR]",
+                ""
         );
     }
 
-    private static Style extractFirstStyle(Component text) {
-        Style s = text.getStyle();
-        if (s != null && s != Style.EMPTY) return s;
+    private static List<StyledChar> extractStyledChars(Component text) {
+        List<StyledChar> result = new ArrayList<>();
+        flattenText(text, Style.EMPTY, result);
+        return result;
+    }
+
+    private static void flattenText(
+            Component text,
+            Style inheritedStyle,
+            List<StyledChar> out
+    ) {
+        if (text == null) return;
+
+        Style effectiveStyle = resolveStyle(inheritedStyle, text.getStyle());
+
+        if (text.getContents() instanceof PlainTextContents plain) {
+            appendFormattedLiteralAsChars(plain.text(), effectiveStyle, out);
+        } else if (text.getContents() instanceof TranslatableContents tc) {
+            Object[] args = tc.getArgs();
+            if (args != null) {
+                for (Object arg : args) {
+                    if (arg instanceof Component argText) {
+                        flattenText(argText, effectiveStyle, out);
+                    } else if (arg instanceof String argStr && !argStr.isEmpty()) {
+                        appendFormattedLiteralAsChars(
+                                argStr,
+                                effectiveStyle,
+                                out
+                        );
+                    }
+                }
+            }
+        } else {
+            String fallback = text.plainCopy().getString();
+            if (fallback != null && !fallback.isEmpty()) {
+                appendFormattedLiteralAsChars(fallback, effectiveStyle, out);
+            }
+        }
+
         for (Component sibling : text.getSiblings()) {
-            Style found = extractFirstStyle(sibling);
-            if (found != Style.EMPTY) return found;
+            flattenText(sibling, effectiveStyle, out);
+        }
+    }
+
+    private static void appendFormattedLiteralAsChars(
+            String raw,
+            Style baseStyle,
+            List<StyledChar> out
+    ) {
+        if (raw == null || raw.isEmpty()) return;
+
+        Style current = baseStyle != null ? baseStyle : Style.EMPTY;
+        int i = 0;
+
+        while (i < raw.length()) {
+            if (raw.charAt(i) == '§') {
+                int hexColor = parseSectionHexColorAt(raw, i);
+                if (hexColor >= 0) {
+                    current = current.withColor(TextColor.fromRgb(hexColor));
+                    i += 14;
+                    continue;
+                }
+
+                if (i + 1 < raw.length()) {
+                    char code = Character.toLowerCase(raw.charAt(i + 1));
+                    if (isLegacySectionCode(code)) {
+                        current = applyLegacy(current, code);
+                        i += 2;
+                        continue;
+                    }
+                }
+            }
+
+            int cp = raw.codePointAt(i);
+            out.add(
+                    new StyledChar(
+                            new String(Character.toChars(cp)),
+                            current
+                    )
+            );
+            i += Character.charCount(cp);
+        }
+    }
+
+    private static void appendCodePointChars(
+            String text,
+            Style style,
+            List<StyledChar> out
+    ) {
+        if (text == null || text.isEmpty()) return;
+
+        int i = 0;
+        while (i < text.length()) {
+            int cp = text.codePointAt(i);
+            out.add(
+                    new StyledChar(
+                            new String(Character.toChars(cp)),
+                            style
+                    )
+            );
+            i += Character.charCount(cp);
+        }
+    }
+
+    private static List<String> splitVisibleChars(String text) {
+        List<String> result = new ArrayList<>();
+        if (text == null || text.isEmpty()) return result;
+
+        int i = 0;
+        while (i < text.length()) {
+            int cp = text.codePointAt(i);
+            result.add(new String(Character.toChars(cp)));
+            i += Character.charCount(cp);
+        }
+
+        return result;
+    }
+
+    private static Style resolveStyle(Style parent, Style child) {
+        if (child == null || child.equals(Style.EMPTY)) {
+            return parent != null ? parent : Style.EMPTY;
+        }
+        if (parent == null || parent.equals(Style.EMPTY)) {
+            return child;
+        }
+        return child.applyTo(parent);
+    }
+
+    private static Style mapOriginalStyle(
+            List<StyledChar> sourceChars,
+            int targetIndex,
+            int targetLength
+    ) {
+        if (sourceChars == null || sourceChars.isEmpty()) {
+            return Style.EMPTY;
+        }
+
+        double sourcePos = computeSourcePosition(
+                targetIndex,
+                targetLength,
+                sourceChars.size()
+        );
+
+        int nearestIndex = clamp(
+                (int) Math.round(sourcePos),
+                0,
+                sourceChars.size() - 1
+        );
+
+        Style base = sourceChars.get(nearestIndex).style();
+        if (base == null) {
+            base = Style.EMPTY;
+        }
+
+        Integer interpolatedColor = interpolateColor(sourceChars, sourcePos);
+        if (interpolatedColor != null) {
+            base = base.withColor(TextColor.fromRgb(interpolatedColor));
+        }
+
+        return base;
+    }
+
+    private static double computeSourcePosition(
+            int targetIndex,
+            int targetLength,
+            int sourceLength
+    ) {
+        if (sourceLength <= 1) return 0.0;
+        if (targetLength <= 1) return (sourceLength - 1) / 2.0;
+
+        return (double) targetIndex * (sourceLength - 1)
+                / (double) (targetLength - 1);
+    }
+
+    private static Integer interpolateColor(
+            List<StyledChar> sourceChars,
+            double sourcePos
+    ) {
+        if (sourceChars == null || sourceChars.isEmpty()) return null;
+
+        int leftIndex = clamp((int) Math.floor(sourcePos), 0, sourceChars.size() - 1);
+        int rightIndex = clamp((int) Math.ceil(sourcePos), 0, sourceChars.size() - 1);
+
+        Integer leftColor = getColorValue(sourceChars.get(leftIndex).style());
+        Integer rightColor = getColorValue(sourceChars.get(rightIndex).style());
+
+        if (leftIndex == rightIndex) {
+            return leftColor != null ? leftColor : rightColor;
+        }
+
+        if (leftColor == null && rightColor == null) return null;
+        if (leftColor == null) return rightColor;
+        if (rightColor == null) return leftColor;
+
+        double t = sourcePos - leftIndex;
+
+        int lr = (leftColor >> 16) & 0xFF;
+        int lg = (leftColor >> 8) & 0xFF;
+        int lb = leftColor & 0xFF;
+
+        int rr = (rightColor >> 16) & 0xFF;
+        int rg = (rightColor >> 8) & 0xFF;
+        int rb = rightColor & 0xFF;
+
+        int r = (int) Math.round(lr + (rr - lr) * t);
+        int g = (int) Math.round(lg + (rg - lg) * t);
+        int b = (int) Math.round(lb + (rb - lb) * t);
+
+        return (r << 16) | (g << 8) | b;
+    }
+
+    private static Integer getColorValue(Style style) {
+        if (style == null || style.getColor() == null) return null;
+        return style.getColor().getValue();
+    }
+
+    private static Style overlayFormatting(Style base, Style formattingOnly) {
+        Style result = base != null ? base : Style.EMPTY;
+        if (formattingOnly == null || formattingOnly.equals(Style.EMPTY)) {
+            return result;
+        }
+
+        if (Boolean.TRUE.equals(formattingOnly.isBold())) {
+            result = result.withBold(true);
+        }
+        if (Boolean.TRUE.equals(formattingOnly.isItalic())) {
+            result = result.withItalic(true);
+        }
+        if (Boolean.TRUE.equals(formattingOnly.isUnderlined())) {
+            result = result.withUnderlined(true);
+        }
+        if (Boolean.TRUE.equals(formattingOnly.isStrikethrough())) {
+            result = result.withStrikethrough(true);
+        }
+        if (Boolean.TRUE.equals(formattingOnly.isObfuscated())) {
+            result = result.withObfuscated(true);
+        }
+
+        return result;
+    }
+
+    /** Returns true for formatting (non-color) legacy codes: l, o, n, m, k. */
+    private static boolean isFormattingCode(char code) {
+        return code == 'l'
+                || code == 'o'
+                || code == 'n'
+                || code == 'm'
+                || code == 'k';
+    }
+
+    /** Applies only formatting flags (bold, italic, etc.) to the style. */
+    private static Style applyFormattingOnly(Style style, char code) {
+        return switch (code) {
+            case 'l' -> style.withBold(true);
+            case 'o' -> style.withItalic(true);
+            case 'n' -> style.withUnderlined(true);
+            case 'm' -> style.withStrikethrough(true);
+            case 'k' -> style.withObfuscated(true);
+            default -> style;
+        };
+    }
+
+    private static boolean isLegacySectionCode(char code) {
+        return (code >= '0' && code <= '9')
+                || (code >= 'a' && code <= 'f')
+                || (code >= 'k' && code <= 'o')
+                || code == 'r';
+    }
+
+    private static boolean isHexDigit(char c) {
+        char lower = Character.toLowerCase(c);
+        return (lower >= '0' && lower <= '9')
+                || (lower >= 'a' && lower <= 'f');
+    }
+
+    private static int parseSectionHexColorAt(String raw, int index) {
+        if (raw == null || index < 0 || index + 13 >= raw.length()) return -1;
+        if (raw.charAt(index) != '§') return -1;
+        if (Character.toLowerCase(raw.charAt(index + 1)) != 'x') return -1;
+
+        StringBuilder hex = new StringBuilder(6);
+        for (int off = 2; off < 14; off += 2) {
+            if (raw.charAt(index + off) != '§') return -1;
+
+            char digit = raw.charAt(index + off + 1);
+            if (!isHexDigit(digit)) return -1;
+
+            hex.append(digit);
+        }
+
+        try {
+            return Integer.parseInt(hex.toString(), 16);
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static Style extractFirstStyle(Component text) {
+        List<StyledChar> chars = extractStyledChars(text);
+        for (StyledChar c : chars) {
+            if (c.style() != null && !c.style().equals(Style.EMPTY)) {
+                return c.style();
+            }
         }
         return Style.EMPTY;
     }
@@ -314,7 +598,7 @@ public class ColorParser {
             case 'm' -> style.withStrikethrough(true);
             case 'k' -> style.withObfuscated(true);
             case 'r' -> Style.EMPTY;
-            default  -> style;
+            default -> style;
         };
     }
 }
