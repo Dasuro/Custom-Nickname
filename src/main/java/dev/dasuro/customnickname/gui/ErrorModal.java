@@ -7,7 +7,7 @@ import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
+import org.lwjgl.sdl.SDLKeycode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -116,7 +116,7 @@ public final class ErrorModal {
     public boolean keyPressed(KeyEvent keyInput) {
         if (!open) return false;
         int keyCode = keyInput.key();
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+        if (keyCode == SDLKeycode.SDLK_ESCAPE || keyCode == SDLKeycode.SDLK_RETURN || keyCode == SDLKeycode.SDLK_KP_ENTER) {
             close();
             return true;
         }

@@ -15,7 +15,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
+import org.lwjgl.sdl.SDLKeycode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,7 +41,7 @@ public class Customnickname implements ClientModInitializer {
         OPEN_MENU_KEY = KeyMappingHelper.registerKeyMapping(
                 new KeyMapping(
                         "key.customnickname.open_menu",
-                        GLFW.GLFW_KEY_N,
+                        SDLKeycode.SDLK_N,
                         KeyMapping.Category.MISC
                 )
         );
